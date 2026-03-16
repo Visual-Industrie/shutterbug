@@ -382,7 +382,7 @@ app.post('/api/submit/:token/entries', async (req, res) => {
   let driveResult = null
   if (file && file.buffer.length > 0) {
     const compRes = await getPool().query(
-      `SELECT c.id, c.name FROM competitions c
+      `SELECT c.id, c.name, c.judging_closes_at FROM competitions c
        JOIN tokens t ON t.competition_id = c.id WHERE t.token = $1`,
       [req.params.token],
     )
@@ -394,6 +394,7 @@ app.post('/api/submit/:token/entries', async (req, res) => {
         mimeType: file.mimeType || 'image/jpeg',
         competitionId: comp.id,
         competitionName: comp.name,
+        judgingClosesAt: comp.judging_closes_at,
       })
     }
   }

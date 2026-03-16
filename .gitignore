@@ -27,6 +27,9 @@ drizzle/meta/
 # Claude Code
 .claude/
 
+# Google OAuth credentials (never commit these)
+oauth-credentials.json
+
 # Temp
 *.tmp
 /tmp/xlvenv/

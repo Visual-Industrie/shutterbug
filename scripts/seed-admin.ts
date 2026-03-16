@@ -5,13 +5,11 @@
  * Set DATABASE_URL in .env.local before running.
  */
 import * as bcrypt from 'bcryptjs'
-import pg from 'pg'
+import * as pg from 'pg'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.resolve(__dirname, '../.env.local') })
+dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 
@@ -21,7 +19,9 @@ const NAME = 'Super Admin'
 const ROLE = 'super_admin'
 
 async function main() {
+  console.log('Connecting to:', process.env.DATABASE_URL?.replace(/:([^:@]+)@/, ':***@'))
   const hash = await bcrypt.hash(PASSWORD, 12)
+  console.log('Hashed password, inserting...')
 
   await pool.query(
     `INSERT INTO admin_users (email, password_hash, name, role)

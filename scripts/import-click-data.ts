@@ -7,12 +7,13 @@
  */
 
 import XLSX from 'xlsx'
-import pg from 'pg'
+import * as pg from 'pg'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import * as dotenv from 'dotenv'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const XLSX_PATH = path.join(__dirname, '../click drive xlsx/WCCDatabase.xlsx')
+dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
+
+const XLSX_PATH = path.resolve(process.cwd(), 'click drive xlsx/WCCDatabase.xlsx')
 
 const db = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres',

@@ -265,7 +265,7 @@ export async function sendResults(competitionId: string): Promise<{
   for (const m of membersRes.rows) {
     try {
       const entriesRes = await pool.query(
-        `SELECT type, title, award, points_awarded FROM entries
+        `SELECT type, title, award, points_awarded, judge_comment FROM entries
          WHERE competition_id = $1 AND member_id = $2`,
         [competitionId, m.id],
       )
@@ -273,8 +273,8 @@ export async function sendResults(competitionId: string): Promise<{
       const { subject, html } = resultsNotificationEmail({
         memberName: `${m.first_name} ${m.last_name}`,
         competitionName: comp.name,
-        entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null }) => ({
-          title: e.title, type: e.type, award: e.award, points: e.points_awarded,
+        entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null; judge_comment: string | null }) => ({
+          title: e.title, type: e.type, award: e.award, points: e.points_awarded, comment: e.judge_comment,
         })),
         token: historyTok.token,
       })

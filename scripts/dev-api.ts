@@ -27,6 +27,7 @@ import { getJudgingData, scoreEntry, completeJudging } from '../api/_lib/judging
 import { getMemberHistory } from '../api/_lib/history.js'
 import { uploadToDrive, deleteFromDrive } from '../api/_lib/drive.js'
 import { parseUpload } from '../api/_lib/parse-upload.js'
+import { processImage, buildEntryFilename } from '../api/_lib/image.js'
 import { getPool } from '../api/_lib/db.js'
 
 const app = express()
@@ -200,17 +201,26 @@ app.post('/api/submit/:token/entries', async (req, res) => {
   let driveResult = null
   if (file && file.buffer.length > 0) {
     const compRes = await getPool().query(
-      `SELECT c.id, c.name, c.judging_closes_at FROM competitions c
+      `SELECT c.id, c.name, c.judging_closes_at, m.membership_number
+       FROM competitions c
        JOIN tokens t ON t.competition_id = c.id
+       JOIN members m ON m.id = t.member_id
        WHERE t.token = $1`,
       [req.params.token],
     )
     const comp = compRes.rows[0]
     if (comp) {
+      const processedBuffer = await processImage(file.buffer)
+      const filename = buildEntryFilename({
+        type,
+        title,
+        membershipNumber: comp.membership_number,
+        originalFilename: file.filename || `${title}.jpg`,
+      })
       driveResult = await uploadToDrive({
-        buffer: file.buffer,
-        filename: file.filename,
-        mimeType: file.mimeType,
+        buffer: processedBuffer,
+        filename,
+        mimeType: 'image/jpeg',
         competitionId: comp.id,
         competitionName: comp.name,
         judgingClosesAt: comp.judging_closes_at,

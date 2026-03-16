@@ -2,6 +2,9 @@
  * Single Vercel serverless function — handles all /api/* routes via Express.
  * Consolidates individual route files to stay within Vercel Hobby plan's 12-function limit.
  */
+// Disable Vercel's default 4.5MB body size limit — image uploads can be up to 50MB
+export const config = { api: { bodyParser: false, responseLimit: false } }
+
 import express from 'express'
 import pg from 'pg'
 import bcrypt from 'bcryptjs'

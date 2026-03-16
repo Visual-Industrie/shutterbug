@@ -22,7 +22,7 @@ export function parseUpload(req: IncomingMessage): Promise<ParsedUpload> {
 
     bb.on('field', (name, value) => { fields[name] = value })
 
-    bb.on('file', (fieldname, fileStream, info) => {
+    bb.on('file', (_fieldname, fileStream, info) => {
       const chunks: Buffer[] = []
       fileStream.on('data', (chunk: Buffer) => chunks.push(chunk))
       fileStream.on('end', () => {

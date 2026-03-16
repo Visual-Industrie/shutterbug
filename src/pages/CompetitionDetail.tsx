@@ -164,7 +164,7 @@ export default function CompetitionDetail() {
     setWorking(true)
     setActionMsg(null)
     try {
-      const data = await apiFetch(path, { method: 'POST' })
+      const data = await apiFetch<{ sent?: number; skipped?: number }>(path, { method: 'POST' })
       if (data.sent !== undefined) {
         setActionMsg({ text: `${label}: ${data.sent} sent, ${data.skipped} skipped.`, ok: true })
       } else {

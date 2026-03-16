@@ -126,7 +126,7 @@ export default function Competitions() {
 
     const rows = (data ?? []).map(c => ({
       ...c,
-      competition_judges: c.competition_judges as Array<{ judges: { name: string } | null }>,
+      competition_judges: c.competition_judges as unknown as Array<{ judges: { name: string } | null }>,
       printim_count: entryCounts[c.id]?.printim ?? 0,
       projim_count: entryCounts[c.id]?.projim ?? 0,
     }))
@@ -135,7 +135,7 @@ export default function Competitions() {
       ? rows.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
       : rows
 
-    setComps(filtered as Competition[])
+    setComps(filtered as unknown as Competition[])
     setLoading(false)
   }
 

@@ -16,10 +16,6 @@ import Judge from '@/pages/Judge'
 import History from '@/pages/History'
 import Join from '@/pages/Join'
 
-function ComingSoon({ name }: { name: string }) {
-  return <div className="p-8"><h1 className="text-2xl font-bold text-gray-900 mb-2">{name}</h1><p className="text-gray-500">Coming soon.</p></div>
-}
-
 export default function App() {
   return (
     <BrowserRouter>

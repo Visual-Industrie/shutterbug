@@ -1,6 +1,6 @@
 const TOKEN_KEY = 'sb_admin_token'
 
-export async function apiFetch(path: string, init?: RequestInit) {
+export async function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
   const res = await fetch(path, {
     ...init,

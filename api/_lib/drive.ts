@@ -6,9 +6,11 @@ function getAuth() {
   const key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.replace(/\\n/g, '\n')
   if (!email || !key) return null
 
-  return new google.auth.JWT(email, undefined, key, [
-    'https://www.googleapis.com/auth/drive',
-  ])
+  return new google.auth.JWT({
+    email,
+    key,
+    scopes: ['https://www.googleapis.com/auth/drive'],
+  })
 }
 
 /**

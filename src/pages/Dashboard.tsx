@@ -147,7 +147,7 @@ export default function Dashboard() {
         opens_at: c.opens_at,
         closes_at: c.closes_at,
         judging_closes_at: c.judging_closes_at,
-        judge_name: (c.competition_judges as Array<{ judges: { name: string } | null }>)?.[0]?.judges?.name ?? null,
+        judge_name: (c.competition_judges as unknown as Array<{ judges: { name: string } | null }>)?.[0]?.judges?.name ?? null,
         printim_count: (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'printim').length ?? 0,
         projim_count:  (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'projim').length ?? 0,
       })))

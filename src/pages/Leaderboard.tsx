@@ -47,7 +47,7 @@ export default function Leaderboard() {
 
       const totals = new Map<string, LeaderRow>()
       for (const r of data ?? []) {
-        const m = r.members as { first_name: string; last_name: string } | null
+        const m = r.members as unknown as { first_name: string; last_name: string } | null
         const name = m ? `${m.first_name} ${m.last_name}` : r.member_id
         const existing = totals.get(r.member_id)
         if (existing) {

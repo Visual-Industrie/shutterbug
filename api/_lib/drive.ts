@@ -121,12 +121,15 @@ export async function downloadFromDrive(driveFileId: string): Promise<Buffer> {
   const auth = getAuth()
   if (!auth) throw new Error('Drive not configured')
 
-  const drive = google.drive({ version: 'v3', auth })
-  const res = await drive.files.get(
-    { fileId: driveFileId, alt: 'media', supportsAllDrives: true } as Parameters<typeof drive.files.get>[0],
-    { responseType: 'arraybuffer' },
+  const { token } = await auth.getAccessToken()
+  if (!token) throw new Error('Could not get Drive access token')
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } },
   )
-  return Buffer.from(res.data as ArrayBuffer)
+  if (!res.ok) throw new Error(`Drive download failed: ${res.status}`)
+  return Buffer.from(await res.arrayBuffer())
 }
 
 export async function uploadToDrive(opts: {

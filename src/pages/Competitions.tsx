@@ -17,16 +17,10 @@ interface Competition {
   projim_count: number
 }
 
-interface Season {
-  id: string
-  year: number
-  is_current: boolean
-}
 
 interface AddForm {
   name: string
   event_type: string
-  season_id: string
   opens_at: string
   closes_at: string
   judging_opens_at: string
@@ -42,7 +36,6 @@ interface AddForm {
 const EMPTY_FORM: AddForm = {
   name: '',
   event_type: 'competition',
-  season_id: '',
   opens_at: '',
   closes_at: '',
   judging_opens_at: '',
@@ -89,7 +82,6 @@ export default function Competitions() {
   const [loading, setLoading] = useState(true)
 
   const [showModal, setShowModal] = useState(false)
-  const [seasons, setSeasons] = useState<Season[]>([])
   const [form, setForm] = useState<AddForm>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -141,12 +133,8 @@ export default function Competitions() {
 
   useEffect(() => { loadComps() }, [search, status, type])
 
-  async function openModal() {
-    const { data } = await supabase.from('seasons').select('id,year,is_current').order('year', { ascending: false })
-    const seasonList = (data ?? []) as Season[]
-    setSeasons(seasonList)
-    const current = seasonList.find(s => s.is_current)
-    setForm({ ...EMPTY_FORM, season_id: current?.id ?? seasonList[0]?.id ?? '' })
+  function openModal() {
+    setForm(EMPTY_FORM)
     setFormError(null)
     setShowModal(true)
   }
@@ -294,14 +282,6 @@ export default function Competitions() {
                     <option value="competition">Competition</option>
                     <option value="award">Award</option>
                     <option value="other">Other</option>
-                  </select>
-                </Field>
-                <Field label="Season *">
-                  <select required value={form.season_id} onChange={e => setField('season_id', e.target.value)} className={inputCls}>
-                    <option value="">Select…</option>
-                    {seasons.map(s => (
-                      <option key={s.id} value={s.id}>{s.year}{s.is_current ? ' (current)' : ''}</option>
-                    ))}
                   </select>
                 </Field>
               </div>

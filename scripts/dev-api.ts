@@ -101,14 +101,20 @@ app.get('/api/auth/me', (req, res) => {
 app.post('/api/competitions', async (req, res) => {
   if (!requireAuth(req, res)) return
   const {
-    name, event_type = 'competition', season_id,
+    name, event_type = 'competition',
     opens_at, closes_at, judging_opens_at, judging_closes_at,
     max_projim_entries = 1, max_printim_entries = 2,
     points_honours = 4, points_highly_commended = 3, points_commended = 2, points_accepted = 1,
   } = req.body ?? {}
 
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
-  if (!season_id) return void res.status(400).json({ error: 'Season is required' })
+
+  const year = opens_at ? new Date(opens_at).getFullYear() : new Date().getFullYear()
+  const seasonRes = await getPool().query(
+    `INSERT INTO seasons (year) VALUES ($1) ON CONFLICT (year) DO UPDATE SET year = EXCLUDED.year RETURNING id`,
+    [year],
+  )
+  const season_id = seasonRes.rows[0].id
 
   const result = await getPool().query(
     `INSERT INTO competitions (

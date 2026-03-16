@@ -379,6 +379,47 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
   res.json({ memberId: memberRes.rows[0].id })
 })
 
+// ── Settings routes (super_admin only) ────────────────────────────────────────
+
+function requireSuperAdmin(req: express.Request, res: express.Response): boolean {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return false }
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { role: string }
+    if (payload.role !== 'super_admin') { res.status(403).json({ error: 'Forbidden' }); return false }
+    return true
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return false
+  }
+}
+
+app.get('/api/settings', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const section = req.query.section as string | undefined
+  const result = section
+    ? await getPool().query(`SELECT key, section, label, value, default_value, description FROM settings WHERE section = $1 ORDER BY key`, [section])
+    : await getPool().query(`SELECT key, section, label, value, default_value, description FROM settings ORDER BY section, key`)
+  res.json(result.rows)
+})
+
+app.patch('/api/settings', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return
+  const updates = req.body as Record<string, string | null>
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+    return void res.status(400).json({ error: 'Body must be an object of { key: value }' })
+  }
+  const entries = Object.entries(updates)
+  if (entries.length === 0) return void res.json({ ok: true })
+  for (const [key, value] of entries) {
+    await getPool().query(
+      `UPDATE settings SET value = $1, updated_at = NOW() WHERE key = $2`,
+      [value, key],
+    )
+  }
+  res.json({ ok: true })
+})
+
 // ── Submission portal (public, token-gated) ───────────────────────────────────
 
 app.get('/api/submit/:token', async (req, res) => {

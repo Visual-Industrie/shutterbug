@@ -14,6 +14,7 @@ const nav = [
 
 export default function Layout() {
   const { user, logout } = useAuth()
+  const isSuperAdmin = user?.role === 'super_admin'
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -47,7 +48,7 @@ export default function Layout() {
           <div className="text-sm font-bold text-amber-600 leading-tight">Camera Club</div>
         </div>
 
-        <nav className="flex-1 py-3 space-y-0.5 px-2">
+        <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
           {nav.map(({ to, label, icon }) => (
             <NavLink
               key={to}
@@ -66,6 +67,22 @@ export default function Layout() {
               {label}
             </NavLink>
           ))}
+          {isSuperAdmin && (
+            <NavLink
+              to="/settings"
+              onClick={closeMenu}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`
+              }
+            >
+              <span className="text-base">⚙</span>
+              Settings
+            </NavLink>
+          )}
         </nav>
 
         <div className="px-4 py-3 border-t border-gray-200">

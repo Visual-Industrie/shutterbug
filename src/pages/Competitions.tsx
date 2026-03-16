@@ -42,8 +42,8 @@ const EMPTY_FORM: AddForm = {
   judging_closes_at: '',
   max_projim_entries: 1,
   max_printim_entries: 2,
-  points_honours: 4,
-  points_highly_commended: 3,
+  points_honours: 6,
+  points_highly_commended: 4,
   points_commended: 2,
   points_accepted: 1,
 }
@@ -133,10 +133,29 @@ export default function Competitions() {
 
   useEffect(() => { loadComps() }, [search, status, type])
 
-  function openModal() {
-    setForm(EMPTY_FORM)
+  async function openModal() {
     setFormError(null)
     setShowModal(true)
+    // Load defaults from settings, fall back to EMPTY_FORM values
+    try {
+      const rows = await apiFetch<{ key: string; value: string | null; default_value: string | null }[]>('/api/settings?section=COMP')
+      const get = (key: string, fallback: number) => {
+        const row = rows.find(r => r.key === key)
+        const v = row?.value ?? row?.default_value
+        return v != null ? Number(v) : fallback
+      }
+      setForm({
+        ...EMPTY_FORM,
+        max_projim_entries:      get('COMP-Upload Limit PROJIM',    EMPTY_FORM.max_projim_entries),
+        max_printim_entries:     get('COMP-Upload Limit PRINTIM',   EMPTY_FORM.max_printim_entries),
+        points_honours:          get('COMP-Points Honours',          EMPTY_FORM.points_honours),
+        points_highly_commended: get('COMP-Points Highly Commended', EMPTY_FORM.points_highly_commended),
+        points_commended:        get('COMP-Points Commended',        EMPTY_FORM.points_commended),
+        points_accepted:         get('COMP-Points Accepted',         EMPTY_FORM.points_accepted),
+      })
+    } catch {
+      setForm(EMPTY_FORM)
+    }
   }
 
   function setField<K extends keyof AddForm>(k: K, v: AddForm[K]) {

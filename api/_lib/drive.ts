@@ -12,10 +12,6 @@ function getAuth() {
   return oauth2
 }
 
-/**
- * Uploads a file buffer to Google Drive inside the competition's folder.
- * Returns { driveFileId, driveFileUrl, driveThumbnailUrl } or null if Drive is not configured.
- */
 /** Finds or creates a Drive folder by name inside a given parent. Supports Shared Drives. */
 async function ensureFolder(
   drive: ReturnType<typeof google.drive>,
@@ -37,6 +33,102 @@ async function ensureFolder(
   return created.data.id!
 }
 
+/** Builds folder path Root > YYYY > MM - CompName and returns the leaf folderId. */
+async function ensureFolderPath(
+  drive: ReturnType<typeof google.drive>,
+  competitionName: string,
+  judgingClosesAt?: string | null,
+): Promise<string> {
+  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
+  if (!rootFolderId) return 'root'
+  const date = judgingClosesAt ? new Date(judgingClosesAt) : new Date()
+  const year = String(date.getUTCFullYear())
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const yearFolderId = await ensureFolder(drive, year, rootFolderId)
+  return ensureFolder(drive, `${month} - ${competitionName}`, yearFolderId)
+}
+
+/**
+ * Creates a Google Drive resumable upload session and returns the upload URL.
+ * The browser can PUT the file bytes directly to this URL — Vercel is not in the path.
+ */
+export async function createDriveUploadSession(opts: {
+  competitionName: string
+  judgingClosesAt?: string | null
+}): Promise<string | null> {
+  const auth = getAuth()
+  if (!auth) return null
+
+  const drive = google.drive({ version: 'v3', auth })
+  const folderId = await ensureFolderPath(drive, opts.competitionName, opts.judgingClosesAt)
+  const { token } = await auth.getAccessToken()
+  if (!token) return null
+
+  const initRes = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'pending', parents: [folderId] }),
+    },
+  )
+  if (!initRes.ok) throw new Error(`Drive resumable init failed: ${initRes.status}`)
+  const uploadUrl = initRes.headers.get('location')
+  if (!uploadUrl) throw new Error('Drive did not return a Location header')
+  return uploadUrl
+}
+
+/**
+ * Replaces a Drive file's content with processedBuffer and renames it.
+ * Sets public reader permission and returns URLs.
+ */
+export async function processDriveFile(opts: {
+  driveFileId: string
+  filename: string
+  processedBuffer: Buffer
+}): Promise<{ driveFileUrl: string; driveThumbnailUrl: string }> {
+  const auth = getAuth()
+  if (!auth) throw new Error('Drive not configured')
+
+  const drive = google.drive({ version: 'v3', auth })
+  const stream = Readable.from(opts.processedBuffer)
+
+  const updated = await drive.files.update({
+    fileId: opts.driveFileId,
+    requestBody: { name: opts.filename },
+    media: { mimeType: 'image/jpeg', body: stream },
+    fields: 'id,webViewLink',
+    supportsAllDrives: true,
+  })
+
+  await drive.permissions.create({
+    fileId: opts.driveFileId,
+    requestBody: { role: 'reader', type: 'anyone' },
+    supportsAllDrives: true,
+  })
+
+  return {
+    driveFileUrl: updated.data.webViewLink ?? `https://drive.google.com/file/d/${opts.driveFileId}/view`,
+    driveThumbnailUrl: `https://drive.google.com/thumbnail?id=${opts.driveFileId}&sz=w400`,
+  }
+}
+
+/** Downloads a file from Drive into memory and returns a Buffer. */
+export async function downloadFromDrive(driveFileId: string): Promise<Buffer> {
+  const auth = getAuth()
+  if (!auth) throw new Error('Drive not configured')
+
+  const drive = google.drive({ version: 'v3', auth })
+  const res = await drive.files.get(
+    { fileId: driveFileId, alt: 'media', supportsAllDrives: true } as Parameters<typeof drive.files.get>[0],
+    { responseType: 'arraybuffer' },
+  )
+  return Buffer.from(res.data as ArrayBuffer)
+}
+
 export async function uploadToDrive(opts: {
   buffer: Buffer
   filename: string
@@ -52,19 +144,7 @@ export async function uploadToDrive(opts: {
   }
 
   const drive = google.drive({ version: 'v3', auth })
-  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
-
-  // Build folder path: Root > YYYY > MM - Competition Name
-  let folderId = rootFolderId ?? 'root'
-  if (rootFolderId) {
-    const date = opts.judgingClosesAt ? new Date(opts.judgingClosesAt) : new Date()
-    const year = String(date.getUTCFullYear())
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-    const competitionFolder = `${month} - ${opts.competitionName}`
-
-    const yearFolderId = await ensureFolder(drive, year, rootFolderId)
-    folderId = await ensureFolder(drive, competitionFolder, yearFolderId)
-  }
+  const folderId = await ensureFolderPath(drive, opts.competitionName, opts.judgingClosesAt)
 
   // Upload the file
   const stream = new Readable()

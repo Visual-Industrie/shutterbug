@@ -52,6 +52,7 @@ export default function Submit() {
   const [title, setTitle] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState('')
   const [uploadMsg, setUploadMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -79,24 +80,59 @@ export default function Submit() {
     setUploading(true)
     setUploadMsg(null)
 
-    const form = new FormData()
-    form.append('type', type)
-    form.append('title', title)
-    if (file) form.append('file', file)
+    try {
+      // Step 1: get resumable upload URL from Vercel
+      setUploadStatus('Preparing upload…')
+      const sessionRes = await fetch(`/api/submit/${token}/entries/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, title }),
+      })
+      const sessionJson = await sessionRes.json()
+      if (!sessionRes.ok) {
+        setUploadMsg({ text: sessionJson.error ?? 'Upload failed', ok: false })
+        return
+      }
+      const { uploadUrl } = sessionJson as { uploadUrl: string }
 
-    const res = await fetch(`/api/submit/${token}/entries`, { method: 'POST', body: form })
-    const json = await res.json()
+      // Step 2: upload directly to Google Drive (Vercel not in the path)
+      setUploadStatus('Uploading…')
+      const driveRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file?.type ?? 'image/jpeg' },
+        body: file ?? undefined,
+      })
+      if (!driveRes.ok) {
+        setUploadMsg({ text: 'Upload to Drive failed', ok: false })
+        return
+      }
+      const driveJson = await driveRes.json()
+      const driveFileId: string = driveJson.id
 
-    if (!res.ok) {
-      setUploadMsg({ text: json.error ?? 'Upload failed', ok: false })
-    } else {
+      // Step 3: process + finalize via Vercel
+      setUploadStatus('Processing…')
+      const finalRes = await fetch(`/api/submit/${token}/entries/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driveFileId, type, title }),
+      })
+      const finalJson = await finalRes.json()
+      if (!finalRes.ok) {
+        setUploadMsg({ text: finalJson.error ?? 'Processing failed', ok: false })
+        return
+      }
+
       setUploadMsg({ text: 'Entry submitted!', ok: true })
       setTitle('')
       setFile(null)
       if (fileRef.current) fileRef.current.value = ''
       await load()
+    } catch {
+      setUploadMsg({ text: 'An unexpected error occurred', ok: false })
+    } finally {
+      setUploading(false)
+      setUploadStatus('')
     }
-    setUploading(false)
   }
 
   async function handleDelete(entryId: string) {
@@ -275,7 +311,7 @@ export default function Submit() {
                 disabled={uploading}
                 className="w-full py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
               >
-                {uploading ? 'Uploading…' : 'Submit entry'}
+                {uploading ? (uploadStatus || 'Uploading…') : 'Submit entry'}
               </button>
             </form>
           </div>

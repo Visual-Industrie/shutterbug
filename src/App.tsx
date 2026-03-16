@@ -15,6 +15,7 @@ import Submit from '@/pages/Submit'
 import Judge from '@/pages/Judge'
 import History from '@/pages/History'
 import Join from '@/pages/Join'
+import Profile from '@/pages/Profile'
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/judges" element={<Judges />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/email" element={<EmailLog />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Routes>
       </AuthProvider>

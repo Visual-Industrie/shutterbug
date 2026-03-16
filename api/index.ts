@@ -73,6 +73,38 @@ app.post('/api/auth/login', async (req, res) => {
   }
 })
 
+app.post('/api/auth/change-password', async (req, res) => {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) return void res.status(401).json({ error: 'Unauthorized' })
+  let userId: string
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { sub: string }
+    userId = payload.sub
+  } catch {
+    return void res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
+  const { currentPassword, newPassword } = req.body ?? {}
+  if (!currentPassword || !newPassword) return void res.status(400).json({ error: 'currentPassword and newPassword are required' })
+  if (newPassword.length < 8) return void res.status(400).json({ error: 'New password must be at least 8 characters' })
+
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+  try {
+    const result = await pool.query('SELECT password_hash FROM admin_users WHERE id = $1', [userId])
+    const admin = result.rows[0]
+    if (!admin) return void res.status(404).json({ error: 'User not found' })
+
+    const valid = await bcrypt.compare(currentPassword, admin.password_hash)
+    if (!valid) return void res.status(401).json({ error: 'Current password is incorrect' })
+
+    const hash = await bcrypt.hash(newPassword, 12)
+    await pool.query('UPDATE admin_users SET password_hash = $1 WHERE id = $2', [hash, userId])
+    res.json({ ok: true })
+  } finally {
+    await pool.end()
+  }
+})
+
 app.get('/api/auth/me', (req, res) => {
   const auth = req.headers.authorization
   if (!auth?.startsWith('Bearer ')) return void res.status(401).json({ error: 'Unauthorized' })

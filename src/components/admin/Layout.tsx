@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 
 const nav = [
@@ -50,8 +50,10 @@ export default function Layout() {
         </nav>
 
         <div className="px-4 py-3 border-t border-gray-200">
-          <div className="text-xs text-gray-500 truncate">{user?.name}</div>
-          <div className="text-xs text-gray-400 capitalize truncate">{user?.role?.replace(/_/g, ' ')}</div>
+          <Link to="/profile" className="block group">
+            <div className="text-xs font-medium text-gray-700 truncate group-hover:text-amber-700 transition-colors">{user?.name}</div>
+            <div className="text-xs text-gray-400 capitalize truncate">{user?.role?.replace(/_/g, ' ')}</div>
+          </Link>
           <button
             onClick={handleLogout}
             className="mt-2 text-xs text-gray-400 hover:text-gray-700 transition-colors"

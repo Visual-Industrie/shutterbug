@@ -116,6 +116,14 @@ export default function CompetitionDetail() {
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Single member invite modal
+  const [showSingleInvite, setShowSingleInvite] = useState(false)
+  const [memberOptions, setMemberOptions] = useState<{ id: string; first_name: string; last_name: string; email: string }[]>([])
+  const [memberSearch, setMemberSearch] = useState('')
+  const [selectedMemberId, setSelectedMemberId] = useState('')
+  const [singleInviteSending, setSingleInviteSending] = useState(false)
+  const [singleInviteError, setSingleInviteError] = useState<string | null>(null)
+
   // Assign judge modal
   const [showJudge, setShowJudge] = useState(false)
   const [judgeOptions, setJudgeOptions] = useState<JudgeOption[]>([])
@@ -231,6 +239,38 @@ export default function CompetitionDetail() {
 
   function setEditField<K extends keyof CompForm>(k: K, v: CompForm[K]) {
     setEditForm(prev => prev ? { ...prev, [k]: v } : prev)
+  }
+
+  async function openSingleInvite() {
+    const { data } = await supabase
+      .from('members')
+      .select('id, first_name, last_name, email')
+      .eq('status', 'active')
+      .not('email', 'like', '%@privacy.wcc.local')
+      .order('last_name')
+    setMemberOptions((data ?? []) as typeof memberOptions)
+    setSelectedMemberId('')
+    setMemberSearch('')
+    setSingleInviteError(null)
+    setShowSingleInvite(true)
+  }
+
+  async function handleSingleInvite() {
+    if (!selectedMemberId) return
+    setSingleInviteSending(true)
+    setSingleInviteError(null)
+    try {
+      await apiFetch(`/api/competitions/${comp!.id}/send-submission-invite-single`, {
+        method: 'POST',
+        body: JSON.stringify({ memberId: selectedMemberId }),
+      })
+      setShowSingleInvite(false)
+      setActionMsg({ text: 'Invite sent.', ok: true })
+    } catch (err) {
+      setSingleInviteError(err instanceof Error ? err.message : 'Failed to send invite')
+    } finally {
+      setSingleInviteSending(false)
+    }
   }
 
   async function openAssignJudge() {
@@ -396,6 +436,12 @@ export default function CompetitionDetail() {
                   disabled={working}
                 />
                 <ActionButton
+                  label="Invite single member…"
+                  onClick={openSingleInvite}
+                  variant="secondary"
+                  disabled={working}
+                />
+                <ActionButton
                   label="Send reminders"
                   onClick={() => doAction(`/api/competitions/${comp.id}/send-submission-reminders`, 'Reminders')}
                   variant="secondary"
@@ -507,6 +553,52 @@ export default function CompetitionDetail() {
               </button>
               <button type="submit" disabled={editSaving} onClick={handleEditSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
                 {editSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Member Invite Modal */}
+      {showSingleInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowSingleInvite(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">Invite single member</h2>
+              <button onClick={() => setShowSingleInvite(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <div className="p-4">
+              <input
+                type="search"
+                placeholder="Search members…"
+                value={memberSearch}
+                onChange={e => setMemberSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {memberOptions
+                  .filter(m => !memberSearch || `${m.first_name} ${m.last_name} ${m.email}`.toLowerCase().includes(memberSearch.toLowerCase()))
+                  .map(m => (
+                    <label key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input type="radio" name="member" value={m.id} checked={selectedMemberId === m.id} onChange={() => setSelectedMemberId(m.id)} className="accent-amber-600" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900">{m.first_name} {m.last_name}</div>
+                        <div className="text-xs text-gray-400 truncate">{m.email}</div>
+                      </div>
+                    </label>
+                  ))}
+              </div>
+              {singleInviteError && <p className="mt-3 text-sm text-red-600">{singleInviteError}</p>}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex gap-3">
+              <button type="button" onClick={() => setShowSingleInvite(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleSingleInvite} disabled={!selectedMemberId || singleInviteSending} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {singleInviteSending ? 'Sending…' : 'Send invite'}
               </button>
             </div>
           </div>

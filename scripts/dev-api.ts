@@ -17,6 +17,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') })
 import {
   sendSubmissionInvites,
   sendSubmissionReminders,
+  sendSubmissionInviteSingle,
   sendJudgingInvite,
   sendMemberHistoryLink,
   sendResults,
@@ -131,6 +132,18 @@ app.post('/api/competitions/:id/send-submission-invites', async (req, res) => {
   try {
     const result = await sendSubmissionInvites(req.params.id)
     res.json(result)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Error' })
+  }
+})
+
+app.post('/api/competitions/:id/send-submission-invite-single', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { memberId } = req.body ?? {}
+  if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
+  try {
+    await sendSubmissionInviteSingle(req.params.id, memberId)
+    res.json({ ok: true })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Error' })
   }

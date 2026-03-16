@@ -308,7 +308,7 @@ app.patch('/api/judges/:id', async (req, res) => {
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
     `UPDATE judges SET name=$1,email=$2,bio=$3,address=$4,rating=$5,is_available=$6,
-     website=$7,facebook=$8,instagram=$9,updated_at=NOW() WHERE id=$10 RETURNING id`,
+     website=$7,facebook=$8,instagram=$9 WHERE id=$10 RETURNING id`,
     [name.trim(), email.trim().toLowerCase(), bio?.trim() || null, address?.trim() || null,
      rating != null && rating !== '' ? parseFloat(rating) : null, is_available ?? true,
      website?.trim() || null, facebook?.trim() || null, instagram?.trim() || null,

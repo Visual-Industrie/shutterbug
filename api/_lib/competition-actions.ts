@@ -170,6 +170,45 @@ export async function sendJudgingInvite(competitionId: string): Promise<{ judgeN
   return { judgeName: row.judge_name }
 }
 
+export async function sendSubmissionInviteSingle(
+  competitionId: string,
+  memberId: string,
+): Promise<void> {
+  const compRes = await getPool().query(
+    `SELECT id, name, closes_at, status FROM competitions WHERE id = $1`,
+    [competitionId],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) throw new Error('Competition not found')
+  if (comp.status !== 'open') throw new Error(`Competition is not open (status: ${comp.status})`)
+
+  const memberRes = await getPool().query(
+    `SELECT id, first_name, last_name, email FROM members WHERE id = $1`,
+    [memberId],
+  )
+  const m = memberRes.rows[0]
+  if (!m) throw new Error('Member not found')
+  if (m.email.includes('@privacy.wcc.local')) throw new Error('Member has no email address on record')
+
+  const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
+  const { subject, html } = submissionInviteEmail({
+    memberName: `${m.first_name} ${m.last_name}`,
+    competitionName: comp.name,
+    closesAt: comp.closes_at,
+    token: tok.token,
+  })
+  await sendEmail({
+    type: 'submission_invite',
+    to: m.email,
+    toName: `${m.first_name} ${m.last_name}`,
+    subject,
+    html,
+    memberId: m.id,
+    competitionId,
+    tokenId: tok.id,
+  })
+}
+
 export async function sendMemberHistoryLink(memberId: string): Promise<void> {
   const memberRes = await getPool().query(
     `SELECT id, first_name, last_name, email FROM members WHERE id = $1`,

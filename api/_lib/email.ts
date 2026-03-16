@@ -158,7 +158,7 @@ export function memberHistoryEmail(opts: {
 export function resultsNotificationEmail(opts: {
   memberName: string
   competitionName: string
-  entries: Array<{ title: string; type: string; award: string | null; points: number | null }>
+  entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null }>
   token: string
 }): { subject: string; html: string } {
   const link = `${appUrl}/history/${opts.token}`
@@ -167,11 +167,14 @@ export function resultsNotificationEmail(opts: {
   const rows = opts.entries.map(e => {
     const award = e.award ? e.award.replace(/_/g, ' ') : 'Not placed'
     const pts = e.points != null ? ` (${e.points} pts)` : ''
+    const comment = e.comment
+      ? `<tr><td colspan="3" style="padding:4px 8px 10px 8px;color:#6b7280;font-style:italic;font-size:13px;border-bottom:1px solid #f0f0f0">${e.comment}</td></tr>`
+      : ''
     return `<tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${e.title}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-transform:uppercase;font-size:12px">${e.type}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-transform:capitalize">${award}${pts}</td>
-    </tr>`
+      <td style="padding:6px 8px 4px 8px">${e.title}</td>
+      <td style="padding:6px 8px 4px 8px;text-transform:uppercase;font-size:12px">${e.type}</td>
+      <td style="padding:6px 8px 4px 8px;text-transform:capitalize;font-weight:bold">${award}${pts}</td>
+    </tr>${comment}`
   }).join('')
 
   const html = `

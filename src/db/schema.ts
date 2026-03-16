@@ -132,6 +132,9 @@ export const judges = pgTable('judges', {
   photoDriveUrl: text('photo_drive_url'),
   rating: numeric('rating', { precision: 2, scale: 1 }), // 1.0–5.0
   isAvailable: boolean('is_available').notNull().default(true),
+  website: text('website'),
+  facebook: text('facebook'),
+  instagram: text('instagram'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

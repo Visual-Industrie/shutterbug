@@ -358,27 +358,30 @@ app.patch('/api/members/:id', async (req, res) => {
 
 app.post('/api/judges', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { name, email, bio, address, rating, is_available = true } = req.body ?? {}
+  const { name, email, bio, address, rating, is_available = true, website, facebook, instagram } = req.body ?? {}
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
-    `INSERT INTO judges (name,email,bio,address,rating,is_available) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    `INSERT INTO judges (name,email,bio,address,rating,is_available,website,facebook,instagram) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
     [name.trim(), email.trim().toLowerCase(), bio?.trim()||null, address?.trim()||null,
-     rating!=null&&rating!==''?parseFloat(rating):null, is_available],
+     rating!=null&&rating!==''?parseFloat(rating):null, is_available,
+     website?.trim()||null, facebook?.trim()||null, instagram?.trim()||null],
   )
   res.status(201).json({ id: result.rows[0].id })
 })
 
 app.patch('/api/judges/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { name, email, bio, address, rating, is_available } = req.body ?? {}
+  const { name, email, bio, address, rating, is_available, website, facebook, instagram } = req.body ?? {}
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
-    `UPDATE judges SET name=$1,email=$2,bio=$3,address=$4,rating=$5,is_available=$6,updated_at=NOW()
-     WHERE id=$7 RETURNING id`,
+    `UPDATE judges SET name=$1,email=$2,bio=$3,address=$4,rating=$5,is_available=$6,
+     website=$7,facebook=$8,instagram=$9,updated_at=NOW() WHERE id=$10 RETURNING id`,
     [name.trim(), email.trim().toLowerCase(), bio?.trim()||null, address?.trim()||null,
-     rating!=null&&rating!==''?parseFloat(rating):null, is_available??true, req.params.id],
+     rating!=null&&rating!==''?parseFloat(rating):null, is_available??true,
+     website?.trim()||null, facebook?.trim()||null, instagram?.trim()||null,
+     req.params.id],
   )
   if (!result.rows.length) return void res.status(404).json({ error: 'Judge not found' })
   res.json({ ok: true })

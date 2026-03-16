@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 import { getPool } from './db.js'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-const FROM = 'Wairarapa Camera Club <noreply@wcc.org.nz>'
+const FROM = 'Wairarapa Camera Club <noreply@wairarapacameraclub.org>'
 
 export interface SendEmailOptions {
   type: string

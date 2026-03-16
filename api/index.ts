@@ -135,8 +135,11 @@ app.post('/api/competitions', async (req, res) => {
   // Derive season from opens_at year, falling back to current year
   const year = opens_at ? new Date(opens_at).getFullYear() : new Date().getFullYear()
   const seasonRes = await getPool().query(
-    `INSERT INTO seasons (year) VALUES ($1) ON CONFLICT (year) DO UPDATE SET year = EXCLUDED.year RETURNING id`,
-    [year],
+    `INSERT INTO seasons (year, starts_at, ends_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (year) DO UPDATE SET year = EXCLUDED.year
+     RETURNING id`,
+    [year, `${year}-01-01`, `${year}-12-31`],
   )
   const season_id = seasonRes.rows[0].id
 

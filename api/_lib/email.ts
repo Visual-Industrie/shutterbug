@@ -155,6 +155,28 @@ export function memberHistoryEmail(opts: {
   return { subject, html }
 }
 
+export function subsReminderEmail(opts: {
+  memberName: string
+  amountDue: string | null
+  reminderNumber: 1 | 2
+}): { subject: string; html: string } {
+  const amount = opts.amountDue ? `$${parseFloat(opts.amountDue).toFixed(2)}` : 'your annual subscription'
+  const subject = opts.reminderNumber === 1
+    ? `Subscription renewal reminder – Wairarapa Camera Club`
+    : `Final reminder: subscription renewal – Wairarapa Camera Club`
+  const urgency = opts.reminderNumber === 2
+    ? `<p><strong>This is your final reminder.</strong> Please pay as soon as possible to keep your membership active.</p>`
+    : ''
+  const html = `
+<p>Hi ${opts.memberName},</p>
+<p>This is a reminder that your Wairarapa Camera Club membership subscription of <strong>${amount}</strong> is due for renewal.</p>
+${urgency}
+<p>Please arrange payment at your earliest convenience. If you have any questions, reply to this email or contact the club treasurer.</p>
+<p>—<br>Wairarapa Camera Club</p>
+`
+  return { subject, html }
+}
+
 export function resultsNotificationEmail(opts: {
   memberName: string
   competitionName: string

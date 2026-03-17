@@ -108,6 +108,7 @@ export default function CompetitionDetail() {
   const queryClient = useQueryClient()
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [working, setWorking] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   // Edit competition modal
   const [showEdit, setShowEdit] = useState(false)
@@ -194,6 +195,33 @@ export default function CompetitionDetail() {
       setActionMsg({ text: `${label} failed: ${msg}`, ok: false })
     } finally {
       setWorking(false)
+    }
+  }
+
+  async function handleDownload(type: 'all' | 'projim') {
+    if (!comp) return
+    setDownloading(true)
+    setActionMsg(null)
+    try {
+      const token = localStorage.getItem('sb_admin_token')
+      const url = `/api/competitions/${comp.id}/download-entries${type !== 'all' ? `?type=${type}` : ''}`
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!response.ok) {
+        const data = await response.json()
+        setActionMsg({ text: `Download failed: ${data.error}`, ok: false })
+        return
+      }
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `${comp.name}${type !== 'all' ? ` (${type})` : ''}.zip`
+      a.click()
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      setActionMsg({ text: `Download failed: ${err instanceof Error ? err.message : 'Error'}`, ok: false })
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -420,6 +448,27 @@ export default function CompetitionDetail() {
               <div className="text-xs text-red-500">No judge assigned</div>
             )}
           </div>
+
+          {/* Download entries */}
+          {(projimTotal + printimTotal > 0) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">Download images</h2>
+              <ActionButton
+                label={downloading ? 'Downloading…' : 'Download all entries'}
+                onClick={() => handleDownload('all')}
+                variant="secondary"
+                disabled={downloading}
+              />
+              {projimTotal > 0 && (
+                <ActionButton
+                  label={downloading ? 'Downloading…' : 'Download PROJIM only'}
+                  onClick={() => handleDownload('projim')}
+                  variant="secondary"
+                  disabled={downloading}
+                />
+              )}
+            </div>
+          )}
 
           {/* Status actions */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">

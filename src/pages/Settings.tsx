@@ -53,6 +53,7 @@ interface MemberOption {
 const TABS = [
   { id: 'comp',      label: 'Competition Defaults' },
   { id: 'committee', label: 'Committee' },
+  { id: 'subs',      label: 'Subscriptions' },
 ]
 
 const COMP_POINTS_KEYS = [
@@ -151,6 +152,11 @@ export default function Settings() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Subs reminder state
+  const [subsWorking, setSubsWorking] = useState(false)
+  const [subsResult, setSubsResult] = useState<{ sent: number; skipped: number; type: string } | null>(null)
+  const [subsError, setSubsError] = useState<string | null>(null)
+
   // Grant Login modal
   const [grantTarget, setGrantTarget] = useState<CommitteeMember | null>(null)
   const [grantRole, setGrantRole] = useState('committee')
@@ -228,6 +234,24 @@ export default function Settings() {
     setGrantRole('committee')
     setGrantError(null)
     setGrantSuccess(null)
+  }
+
+  async function sendSubsReminder(type: 'first' | 'second') {
+    if (!confirm(`Send ${type} subs reminder to all active members with unpaid subs?`)) return
+    setSubsWorking(true)
+    setSubsResult(null)
+    setSubsError(null)
+    try {
+      const result = await apiFetch<{ sent: number; skipped: number }>('/api/email/subs-reminder', {
+        method: 'POST',
+        body: JSON.stringify({ type }),
+      })
+      setSubsResult({ ...result, type })
+    } catch (err) {
+      setSubsError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setSubsWorking(false)
+    }
   }
 
   // Guard — must come after all hooks
@@ -585,6 +609,59 @@ export default function Settings() {
                 {addMemberMutation.isPending ? 'Adding…' : 'Add member'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Subscriptions tab ── */}
+      {tab === 'subs' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Annual subscription reminders</h2>
+            <p className="text-xs text-gray-400 mb-5">Send reminder emails to all active members who have not yet paid their subscription. These are typically sent in mid-December and mid-January.</p>
+
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4 py-3 border-b border-gray-100">
+                <div>
+                  <div className="text-sm font-medium text-gray-800">1st reminder</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Sent ~December 13 — gentle reminder that subs are due for the new year</div>
+                </div>
+                <button
+                  onClick={() => sendSubsReminder('first')}
+                  disabled={subsWorking}
+                  className="shrink-0 px-4 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {subsWorking ? 'Sending…' : 'Send now'}
+                </button>
+              </div>
+
+              <div className="flex items-start justify-between gap-4 py-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-800">2nd reminder</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Sent ~January 13 — final reminder before grace period ends</div>
+                </div>
+                <button
+                  onClick={() => sendSubsReminder('second')}
+                  disabled={subsWorking}
+                  className="shrink-0 px-4 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {subsWorking ? 'Sending…' : 'Send now'}
+                </button>
+              </div>
+            </div>
+
+            {subsError && <p className="mt-3 text-sm text-red-600">{subsError}</p>}
+            {subsResult && (
+              <div className="mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
+                {subsResult.type === 'first' ? '1st' : '2nd'} reminder sent to {subsResult.sent} member{subsResult.sent !== 1 ? 's' : ''}.
+                {subsResult.skipped > 0 && ` ${subsResult.skipped} skipped.`}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
+            <p className="font-medium mb-1">Automated scheduling</p>
+            <p>These reminders can also run automatically via GitHub Actions on Dec 13 and Jan 13. See <code>.github/workflows/subs-reminders.yml</code> — requires <code>APP_URL</code> and <code>CRON_SECRET</code> secrets.</p>
           </div>
         </div>
       )}

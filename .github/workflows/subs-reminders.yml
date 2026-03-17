@@ -1,0 +1,49 @@
+name: Subscription Reminders
+
+on:
+  # 1st reminder: Dec 13 at 8am NZDT (= Dec 12 19:00 UTC, NZ is UTC+13 in summer)
+  # 2nd reminder: Jan 13 at 8am NZDT (= Jan 12 19:00 UTC)
+  schedule:
+    - cron: '0 19 12 12 *'
+    - cron: '0 19 12 1 *'
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Reminder type'
+        required: true
+        default: 'first'
+        type: choice
+        options:
+          - first
+          - second
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine reminder type
+        id: type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=${{ github.event.inputs.type }}" >> $GITHUB_OUTPUT
+          elif [ "$(date +%m)" = "12" ]; then
+            echo "type=first" >> $GITHUB_OUTPUT
+          else
+            echo "type=second" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send subs reminder
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST "${{ secrets.APP_URL }}/api/email/subs-reminder" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -d "{\"type\": \"${{ steps.type.outputs.type }}\"}")
+          body=$(echo "$response" | head -n1)
+          status=$(echo "$response" | tail -n1)
+          echo "Response: $body"
+          echo "Status: $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Subs reminder failed with status $status: $body"
+            exit 1
+          fi

@@ -25,7 +25,9 @@ import {
 import { getSubmissionData, createEntry, deleteEntry } from '../api/_lib/submission.js'
 import { getJudgingData, scoreEntry, completeJudging } from '../api/_lib/judging.js'
 import { getMemberHistory } from '../api/_lib/history.js'
-import { uploadToDrive, deleteFromDrive } from '../api/_lib/drive.js'
+import archiver from 'archiver'
+import { uploadToDrive, deleteFromDrive, downloadFromDrive } from '../api/_lib/drive.js'
+import { sendEmail, subsReminderEmail } from '../api/_lib/email.js'
 import { parseUpload } from '../api/_lib/parse-upload.js'
 import { processImage, buildEntryFilename } from '../api/_lib/image.js'
 import { getPool } from '../api/_lib/db.js'
@@ -455,6 +457,113 @@ app.patch('/api/applicants/:id', async (req, res) => {
   )
   if (!result.rows.length) return void res.status(404).json({ error: 'Applicant not found' })
   res.json({ ok: true })
+})
+
+// ── Bulk entry download ────────────────────────────────────────────────────────
+
+app.get('/api/competitions/:id/download-entries', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { id } = req.params
+  const typeFilter = req.query.type as string | undefined
+  try {
+    const compRes = await getPool().query(`SELECT name FROM competitions WHERE id = $1`, [id])
+    const comp = compRes.rows[0]
+    if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+    const entriesRes = await getPool().query(
+      typeFilter && typeFilter !== 'all'
+        ? `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL AND type = $2 ORDER BY type, title`
+        : `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL ORDER BY type, title`,
+      typeFilter && typeFilter !== 'all' ? [id, typeFilter] : [id],
+    )
+    if (!entriesRes.rows.length) return void res.status(404).json({ error: 'No entries with images found' })
+
+    const files = await Promise.all(
+      entriesRes.rows.map(async (e: { title: string; type: string; drive_file_id: string }, i: number) => {
+        const buffer = await downloadFromDrive(e.drive_file_id)
+        const safeName = e.title.replace(/[^a-z0-9_\-\.]/gi, '_')
+        const filename = `${String(i + 1).padStart(3, '0')}_${e.type}_${safeName}.jpg`
+        return { filename, buffer }
+      }),
+    )
+
+    const zipName = `${comp.name.replace(/[^a-z0-9_\-]/gi, '_')}${typeFilter && typeFilter !== 'all' ? `_${typeFilter}` : ''}.zip`
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`)
+    const archive = archiver('zip', { zlib: { level: 1 } })
+    archive.on('error', (err: Error) => { console.error('Zip error', err) })
+    archive.pipe(res)
+    for (const { filename, buffer } of files) archive.append(buffer, { name: filename })
+    await archive.finalize()
+  } catch (err) {
+    console.error('GET download-entries', err)
+    if (!res.headersSent) res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── Bulk email ─────────────────────────────────────────────────────────────────
+
+app.post('/api/email/send-bulk', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { recipients, member_id, subject, body } = req.body ?? {}
+  if (!subject?.trim()) return void res.status(400).json({ error: 'Subject is required' })
+  if (!body?.trim()) return void res.status(400).json({ error: 'Body is required' })
+  if (!['all_active', 'subs_unpaid', 'member'].includes(recipients)) {
+    return void res.status(400).json({ error: 'Invalid recipients' })
+  }
+  try {
+    let memberRows: { id: string; first_name: string; last_name: string; email: string }[] = []
+    if (recipients === 'member') {
+      const r = await getPool().query(
+        `SELECT id, first_name, last_name, email FROM members WHERE id = $1 AND email NOT LIKE '%@privacy.wcc.local'`,
+        [member_id],
+      )
+      memberRows = r.rows
+    } else {
+      const condition = recipients === 'subs_unpaid' ? `AND subs_paid = false` : ``
+      const r = await getPool().query(
+        `SELECT id, first_name, last_name, email FROM members WHERE status = 'active' AND email NOT LIKE '%@privacy.wcc.local' ${condition} ORDER BY last_name, first_name`,
+      )
+      memberRows = r.rows
+    }
+    if (!memberRows.length) return void res.status(400).json({ error: 'No matching members found' })
+    const htmlBody = body.split(/\n\n+/).filter(Boolean)
+      .map((p: string) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('\n')
+    const html = `${htmlBody}\n<p>—<br>Wairarapa Camera Club</p>`
+    let sent = 0, skipped = 0
+    for (const m of memberRows) {
+      try {
+        await sendEmail({ type: 'one_off', to: m.email, toName: `${m.first_name} ${m.last_name}`, subject: subject.trim(), html, memberId: m.id })
+        sent++
+      } catch { skipped++ }
+    }
+    res.json({ sent, skipped })
+  } catch (err) { res.status(500).json({ error: (err as Error).message }) }
+})
+
+// ── Subs reminder ──────────────────────────────────────────────────────────────
+
+app.post('/api/email/subs-reminder', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET
+  const isCron = cronSecret && req.headers['x-cron-secret'] === cronSecret
+  if (!isCron && !requireAuth(req, res)) return
+  const reminderNumber: 1 | 2 = req.body?.type === 'second' ? 2 : 1
+  try {
+    const membersRes = await getPool().query(
+      `SELECT id, first_name, last_name, email, annual_sub_amount FROM members
+       WHERE status = 'active' AND subs_paid = false AND email NOT LIKE '%@privacy.wcc.local'
+       ORDER BY last_name, first_name`,
+    )
+    let sent = 0, skipped = 0
+    for (const m of membersRes.rows) {
+      try {
+        const { subject, html } = subsReminderEmail({ memberName: `${m.first_name} ${m.last_name}`, amountDue: m.annual_sub_amount, reminderNumber })
+        await sendEmail({ type: 'subs_reminder', to: m.email, toName: `${m.first_name} ${m.last_name}`, subject, html, memberId: m.id })
+        sent++
+      } catch { skipped++ }
+    }
+    res.json({ sent, skipped })
+  } catch (err) { res.status(500).json({ error: (err as Error).message }) }
 })
 
 // ── Competition edit/judge routes ──────────────────────────────────────────────

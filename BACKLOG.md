@@ -1,72 +1,113 @@
-# Backlog
+# Shutterbug — Backlog
 
-Tracked features and architectural work not yet built.
-
----
-
-## BL-1 — Multi-club support
-
-**Goal:** Allow multiple camera clubs to run on a single Shutterbug install, each with full data isolation. Enables selling to other clubs without separate deployments.
-
-**Approach:**
-- Add a `clubs` table (`id`, `name`, `slug`, `logo_url`, `config`)
-- Add `club_id` FK column to every tenant-scoped table: `members`, `applicants`, `competitions`, `seasons`, `judges`, `competition_judges`, `entries`, `tokens`, `email_log`, `member_points`, `admin_users`
-- Admin users belong to one club (or `super_admin` can access all)
-- All queries filter by `club_id` derived from the authenticated user's JWT payload
-- Public portal routes (`/submit/[token]`, `/judge/[token]`, `/history/[token]`) are already token-scoped — tokens table gets `club_id` too, but no URL change needed
-- `/join` form needs a club slug in the URL (`/join/[slug]`) so applicants land on the right club's form
-- Vercel env stays the same — one `DATABASE_URL`, one deploy, multi-tenant in DB
-
-**Schema changes required:**
-```sql
-CREATE TABLE clubs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,       -- used in /join/[slug]
-  logo_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE members ADD COLUMN club_id UUID REFERENCES clubs(id);
--- (repeat for all tenant tables)
-```
-
-**Notes:**
-- Current single-club data would be migrated to a default `clubs` row
-- Paid Vercel + Supabase tiers will be needed once multi-club traffic grows — fine to defer
+Everything still to be built. See `completed.md` for what's already done.
 
 ---
 
-## BL-2 — Batched competition emails with single log entry
+---
 
-**Goal:** When submission invites, reminders, judging invites, or results are sent to all members of a competition, the email log should show **one summary row** (e.g. "Submission invites — March Competition — 52 recipients") rather than 52 individual rows. Individual magic links are still unique per member.
+## Medium Priority
 
-**Approach:**
-- Add an `email_batch` table:
-  ```sql
-  CREATE TABLE email_batches (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    competition_id UUID REFERENCES competitions(id),
-    type TEXT NOT NULL,           -- 'submission_invite' | 'reminder' | 'judging_invite' | 'results'
-    recipient_count INT NOT NULL,
-    skipped_count INT NOT NULL DEFAULT 0,
-    sent_at TIMESTAMPTZ DEFAULT NOW(),
-    sent_by UUID REFERENCES admin_users(id)
-  );
-  ```
-- `email_log` gets a nullable `batch_id UUID REFERENCES email_batches(id)` — individual records still exist for delivery auditing / bounce tracking, but the UI groups by batch
-- Email log admin UI shows batch rows collapsed by default; expandable to show individual sends
-- `sendSubmissionInvites`, `sendReminders`, etc. in `competition-actions.ts` create a batch record and attach `batch_id` to each `email_log` insert
+### Season Management
+Seasons are auto-created from competition dates but `is_current_event_year` and `is_current_membership_year` are never set in the UI.
+- Settings UI to designate the current event year and current membership year
+- Enforce only one `is_current = true` at a time (application logic)
+- Leaderboard and dashboard stats should filter by current event year season
+
+### Judge Guidelines Page
+Static content shown to judges during scoring explaining the club's judging philosophy.
+- Linked from the judge portal (`/judge/:token`) as a panel or separate page
+- Content: scoring categories, guidance on writing comments, format of the club evening
+- Either hardcoded HTML or an admin-editable rich text field in Settings
+
+### Competition Status Advancement
+Currently admins manually advance status with no guardrails.
+- "Advance status" button on Competition Detail with a confirmation step
+- Or automated: status changes based on dates (`opens_at`, `closes_at`, etc.)
+- Advancing to `judging` could optionally auto-send the judging invite
+
+### Public Leaderboard
+Members should be able to view the season leaderboard without logging in.
+- Public URL (no auth, no token required)
+- PROJIM and PRINTIM tabs
+- Current season only
+- Could be linked from the member history portal
+
+### Member Detail / Notes / Consent
+Fields exist in the DB but aren't fully exposed in the admin UI.
+- `notes` — free text notes per member, editable by any admin
+- `privacy_act_ok`, `image_use_ok`, `club_rules_ok` — consent flags visible (and editable) in member detail
+- `payment_method` — visible/editable by treasurer
+- Consider a dedicated member detail/profile view rather than cramming everything into the edit modal
+
+### Admin User Management
+Currently no UI to see or manage who has admin access.
+- List all admin users with their roles and last login
+- super_admin can edit role, deactivate/reactivate accounts
+- Complements the existing committee "Grant Login" invite flow
 
 ---
 
-## BL-3 — Resend magic link from member profile
+## Lower Priority
 
-**Goal:** Treasurer or competition secretary can resend a submission invite (magic link) to a specific member for a specific competition, directly from the Members admin page.
+### Resend Results to Specific Member
+"Send Results" currently emails all submitters at once. Need a targeted resend.
+- Button per member/entry on Competition Detail
+- Useful when a member didn't receive their results email
 
-**Approach:**
-- On the member's edit slide-over (or a dedicated member detail view), add a "Competitions" section listing open/upcoming competitions they have a token for
-- "Resend link" button calls a new endpoint: `POST /api/members/:id/resend-submission-link` with `{ competition_id }`
-- Handler: looks up the existing token (or creates one), sends the submission invite email to just that member, writes to `email_log`
-- This reuses `upsertSubmissionToken` and the existing email template — no new token is minted if one already exists
-- Also useful for judges: "Resend judging link" on the competition detail page's judge card (`POST /api/competitions/:id/resend-judging-invite`)
+### Dashboard Improvements
+Several stats from the spec are not yet displayed on the dashboard:
+- Competitions with no judge assigned
+- Competitions remaining this year
+- Judges available count
+- Submitters in the last 3 months
+- Life member count
+- Full event schedule (upcoming competitions with status, judge, entry counts)
+
+### Email Log Improvements
+- Audit and consistently populate the `body` column on `email_log`
+- Expandable body preview in the Email Log UI
+- Filter by email type, date range, member
+
+---
+
+## Tech Debt
+
+### Consolidate dev-api.ts
+`scripts/dev-api.ts` is a hand-maintained mirror of `api/index.ts` for local dev. It has drifted before and caused bugs. Options:
+- Run `api/index.ts` directly in local dev with an env/compat shim
+- Auto-generate it as part of a build step
+- At minimum, document a strict process for keeping it in sync when routes change
+
+### Automated Tests
+No tests exist. High-value areas to cover first:
+- Token validation logic
+- Points calculation and ledger writes on judging completion
+- Competition delete cascade
+- Email sending (mock Resend)
+
+### Email Template Consistency
+Emails are inline HTML strings scattered across handlers. Extract into a shared template with consistent branding, header/footer, and club name pulled from the `settings` table.
+
+### Error Handling Consistency
+API errors are handled inconsistently on the frontend — some show toasts, some inline messages, some nothing. Standardise on a single pattern.
+
+---
+
+## Previously Captured (from original backlog)
+
+### BL-1 — Multi-club Support
+Allow multiple camera clubs to run on a single Shutterbug install with full data isolation.
+- Add a `clubs` table; add `club_id` FK to all tenant-scoped tables
+- Admin users belong to one club; super_admin can access all
+- `/join/[slug]` for club-specific applicant registration
+- One deployment, multi-tenant in DB
+- Paid Vercel + Supabase tiers needed at scale — fine to defer
+
+### BL-2 — Batched Email Log Entries
+When sending invites/reminders/results to all members of a competition, the email log should show one summary row rather than one row per recipient.
+- Add `email_batches` table; `email_log` gets nullable `batch_id`
+- UI shows batch rows collapsed by default, expandable to individual sends
+
+### BL-3 — Resend Submission / Judging Link from Admin
+Resend a magic link to a specific member for a specific competition from the Members admin page. Also: "Resend judging link" on the Competition Detail judge card.

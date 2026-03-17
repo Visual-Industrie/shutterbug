@@ -17,23 +17,28 @@ export default function EmailLog() {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const { data: emails = [], isLoading } = useQuery({
-    queryKey: ['emails', search],
+  const { data: allEmails = [], isLoading } = useQuery({
+    queryKey: ['emails'],
     queryFn: async () => {
-      let q = supabase
+      const { data } = await supabase
         .from('email_log')
         .select('id,type,recipient_email,recipient_name,subject,body,sent_at,error')
         .order('sent_at', { ascending: false })
         .limit(200)
-      if (search) {
-        q = q.or(
-          `subject.ilike.%${search}%,recipient_email.ilike.%${search}%,recipient_name.ilike.%${search}%`
-        )
-      }
-      const { data } = await q
       return data ?? []
     },
   })
+
+  const emails = search
+    ? allEmails.filter(e => {
+        const q = search.toLowerCase()
+        return (
+          e.subject.toLowerCase().includes(q) ||
+          e.recipient_email.toLowerCase().includes(q) ||
+          (e.recipient_name ?? '').toLowerCase().includes(q)
+        )
+      })
+    : allEmails
 
   function fmt(d: string) {
     return new Date(d).toLocaleString('en-NZ', {

@@ -152,23 +152,24 @@ export default function Judges() {
   const [viewComps, setViewComps] = useState<JudgedComp[]>([])
   const [viewLoading, setViewLoading] = useState(false)
 
-  const { data: judges = [], isLoading } = useQuery<Judge[]>({
-    queryKey: ['judges', search, onlyAvailable],
+  const { data: allJudges = [], isLoading } = useQuery<Judge[]>({
+    queryKey: ['judges'],
     queryFn: async () => {
-      let q = supabase
+      const { data } = await supabase
         .from('judges')
         .select('id,name,email,bio,address,rating,is_available,website,facebook,instagram,competition_judges(id)')
         .order('name')
-
-      if (onlyAvailable) q = q.eq('is_available', true)
-      if (search) q = q.ilike('name', `%${search}%`)
-
-      const { data } = await q
       return (data ?? []).map((j: Record<string, unknown>) => ({
         ...(j as Omit<Judge, 'comp_count'>),
         comp_count: Array.isArray(j.competition_judges) ? j.competition_judges.length : 0,
       }))
     },
+  })
+
+  const judges = allJudges.filter(j => {
+    if (onlyAvailable && !j.is_available) return false
+    if (search && !j.name.toLowerCase().includes(search.toLowerCase())) return false
+    return true
   })
 
   const saveMutation = useMutation({

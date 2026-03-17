@@ -66,25 +66,30 @@ export default function Members() {
   const [form, setForm] = useState<MemberForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data: members = [], isLoading } = useQuery({
-    queryKey: ['members', search, status, type],
+  const { data: allMembers = [], isLoading } = useQuery({
+    queryKey: ['members'],
     queryFn: async () => {
-      let q = supabase
+      const { data } = await supabase
         .from('members')
         .select('id,first_name,last_name,email,phone,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
         .order('last_name', { ascending: true })
-
-      if (status !== 'all') q = q.eq('status', status)
-      if (type !== 'all') q = q.eq('membership_type', type)
-      if (search) {
-        q = q.or(
-          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,membership_number.eq.${search}`
-        )
-      }
-
-      const { data } = await q
       return data ?? []
     },
+  })
+
+  const members = allMembers.filter(m => {
+    if (status !== 'all' && m.status !== status) return false
+    if (type !== 'all' && m.membership_type !== type) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return (
+        m.first_name.toLowerCase().includes(q) ||
+        m.last_name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.membership_number === search
+      )
+    }
+    return true
   })
 
   const saveMutation = useMutation({

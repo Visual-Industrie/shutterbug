@@ -85,9 +85,9 @@ export default function Competitions() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data: allComps = [], isLoading } = useQuery<Competition[]>({
-    queryKey: ['competitions', status, type],
+    queryKey: ['competitions'],
     queryFn: async () => {
-      let q = supabase
+      const { data } = await supabase
         .from('competitions')
         .select(`
           id, name, event_type, status, opens_at, closes_at, judging_closes_at,
@@ -95,11 +95,6 @@ export default function Competitions() {
           competition_judges(judges(name))
         `)
         .order('opens_at', { ascending: false })
-
-      if (status !== 'all') q = q.eq('status', status)
-      if (type !== 'all') q = q.eq('event_type', type)
-
-      const { data } = await q
 
       const compIds = (data ?? []).map(c => c.id)
       let entryCounts: Record<string, { printim: number; projim: number }> = {}
@@ -124,9 +119,12 @@ export default function Competitions() {
     },
   })
 
-  const comps = search
-    ? allComps.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-    : allComps
+  const comps = allComps.filter(c => {
+    if (status !== 'all' && c.status !== status) return false
+    if (type !== 'all' && c.event_type !== type) return false
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
 
   const createMutation = useMutation({
     mutationFn: (form: AddForm) =>

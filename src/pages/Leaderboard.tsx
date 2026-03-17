@@ -33,8 +33,8 @@ export default function Leaderboard() {
     },
   })
 
-  const { data: rows = [], isLoading } = useQuery<LeaderRow[]>({
-    queryKey: ['points', seasonId, tab],
+  const { data: allRows = [], isLoading } = useQuery<LeaderRow[]>({
+    queryKey: ['points', seasonId],
     queryFn: async () => {
       const { data } = await supabase
         .from('member_points')
@@ -62,15 +62,17 @@ export default function Leaderboard() {
       }
 
       return Array.from(totals.values())
-        .sort((a, b) => {
-          const av = tab === 'projim' ? a.projim : tab === 'printim' ? a.printim : a.total
-          const bv = tab === 'projim' ? b.projim : tab === 'printim' ? b.printim : b.total
-          return bv - av
-        })
-        .filter(r => (tab === 'projim' ? r.projim : tab === 'printim' ? r.printim : r.total) > 0)
     },
     enabled: !!seasonId,
   })
+
+  const rows = allRows
+    .filter(r => (tab === 'projim' ? r.projim : tab === 'printim' ? r.printim : r.total) > 0)
+    .sort((a, b) => {
+      const av = tab === 'projim' ? a.projim : tab === 'printim' ? a.printim : a.total
+      const bv = tab === 'projim' ? b.projim : tab === 'printim' ? b.printim : b.total
+      return bv - av
+    })
 
   const selectedYear = seasons.find(s => s.id === seasonId)?.year
 

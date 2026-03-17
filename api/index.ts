@@ -493,7 +493,7 @@ app.post('/api/email/subs-reminder', async (req, res) => {
     let sent = 0, skipped = 0
     for (const m of membersRes.rows) {
       try {
-        const { subject, html } = subsReminderEmail({
+        const { subject, html } = await subsReminderEmail({
           memberName: `${m.first_name} ${m.last_name}`,
           amountDue: m.annual_sub_amount,
           reminderNumber,

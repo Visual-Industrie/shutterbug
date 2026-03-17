@@ -236,6 +236,18 @@ export const settings = pgTable('settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// ─── Email Templates ──────────────────────────────────────────────────────────
+
+export const emailTemplates = pgTable('email_templates', {
+  key: text('key').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  subjectTemplate: text('subject_template').notNull(),
+  bodyHtml: text('body_html').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedById: uuid('updated_by_id').references(() => adminUsers.id),
+})
+
 // ─── Email Log ────────────────────────────────────────────────────────────────
 
 export const emailLog = pgTable('email_log', {

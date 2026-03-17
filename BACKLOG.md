@@ -73,21 +73,12 @@ Several stats from the spec are not yet displayed on the dashboard:
 
 ## Tech Debt
 
-### Consolidate dev-api.ts
-`scripts/dev-api.ts` is a hand-maintained mirror of `api/index.ts` for local dev. It has drifted before and caused bugs. Options:
-- Run `api/index.ts` directly in local dev with an env/compat shim
-- Auto-generate it as part of a build step
-- At minimum, document a strict process for keeping it in sync when routes change
-
 ### Automated Tests
 No tests exist. High-value areas to cover first:
 - Token validation logic
 - Points calculation and ledger writes on judging completion
 - Competition delete cascade
 - Email sending (mock Resend)
-
-### Email Template Consistency
-Emails are inline HTML strings scattered across handlers. Extract into a shared template with consistent branding, header/footer, and club name pulled from the `settings` table.
 
 ### Error Handling Consistency
 API errors are handled inconsistently on the frontend — some show toasts, some inline messages, some nothing. Standardise on a single pattern.

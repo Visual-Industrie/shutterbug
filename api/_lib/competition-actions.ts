@@ -36,7 +36,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<{
   for (const m of membersRes.rows) {
     try {
       const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
-      const { subject, html } = submissionInviteEmail({
+      const { subject, html } = await submissionInviteEmail({
         memberName: `${m.first_name} ${m.last_name}`,
         competitionName: comp.name,
         closesAt: comp.closes_at,
@@ -95,7 +95,7 @@ export async function sendSubmissionReminders(competitionId: string): Promise<{
       )
       const entryCount = parseInt(entryRes.rows[0].cnt, 10)
 
-      const { subject, html } = submissionReminderEmail({
+      const { subject, html } = await submissionReminderEmail({
         memberName: `${m.first_name} ${m.last_name}`,
         competitionName: comp.name,
         closesAt: comp.closes_at,
@@ -147,7 +147,7 @@ export async function sendJudgingInvite(competitionId: string): Promise<{ judgeN
   const printimCount = parseInt(counts.rows.find((r: { type: string }) => r.type === 'printim')?.cnt ?? '0', 10)
 
   const tok = await upsertJudgingToken(row.judge_id, competitionId, row.judging_closes_at)
-  const { subject, html } = judgingInviteEmail({
+  const { subject, html } = await judgingInviteEmail({
     judgeName: row.judge_name,
     competitionName: row.name,
     judgingClosesAt: row.judging_closes_at,
@@ -191,7 +191,7 @@ export async function sendSubmissionInviteSingle(
   if (m.email.includes('@privacy.wcc.local')) throw new Error('Member has no email address on record')
 
   const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
-  const { subject, html } = submissionInviteEmail({
+  const { subject, html } = await submissionInviteEmail({
     memberName: `${m.first_name} ${m.last_name}`,
     competitionName: comp.name,
     closesAt: comp.closes_at,
@@ -219,7 +219,7 @@ export async function sendMemberHistoryLink(memberId: string): Promise<void> {
   if (m.email.includes('@privacy.wcc.local')) throw new Error('Member email not available')
 
   const tok = await upsertHistoryToken(m.id)
-  const { subject, html } = memberHistoryEmail({
+  const { subject, html } = await memberHistoryEmail({
     memberName: `${m.first_name} ${m.last_name}`,
     token: tok.token,
   })
@@ -270,7 +270,7 @@ export async function sendResults(competitionId: string): Promise<{
         [competitionId, m.id],
       )
       const historyTok = await upsertHistoryToken(m.id)
-      const { subject, html } = resultsNotificationEmail({
+      const { subject, html } = await resultsNotificationEmail({
         memberName: `${m.first_name} ${m.last_name}`,
         competitionName: comp.name,
         entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null; judge_comment: string | null }) => ({

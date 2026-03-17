@@ -205,6 +205,48 @@ app.get('/api/auth/me', (req, res) => {
   }
 })
 
+// ── Email template routes ──────────────────────────────────────────────────────
+
+app.get('/api/email-templates', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try {
+    const result = await getPool().query(
+      `SELECT key, name, description, subject_template, body_html, updated_at FROM email_templates ORDER BY key`,
+    )
+    res.json(result.rows)
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.patch('/api/email-templates/:key', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const auth = req.headers.authorization!
+  const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { sub: string; role: string }
+  const allowedRoles = ['super_admin', 'president', 'competition_secretary']
+  if (!allowedRoles.includes(payload.role)) {
+    return void res.status(403).json({ error: 'Insufficient permissions to edit email templates' })
+  }
+
+  const { subject_template, body_html } = req.body ?? {}
+  if (!subject_template?.trim()) return void res.status(400).json({ error: 'subject_template is required' })
+  if (!body_html?.trim()) return void res.status(400).json({ error: 'body_html is required' })
+
+  try {
+    const result = await getPool().query(
+      `UPDATE email_templates
+       SET subject_template = $1, body_html = $2, updated_at = NOW(), updated_by_id = $3
+       WHERE key = $4
+       RETURNING key, name, description, subject_template, body_html, updated_at`,
+      [subject_template.trim(), body_html.trim(), payload.sub, req.params.key],
+    )
+    if (result.rows.length === 0) return void res.status(404).json({ error: 'Template not found' })
+    res.json(result.rows[0])
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // ── Competition routes ─────────────────────────────────────────────────────────
 
 app.post('/api/competitions', async (req, res) => {

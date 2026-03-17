@@ -59,27 +59,76 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   )
 }
 
+// ─── Template engine ──────────────────────────────────────────────────────────
+
+// Keys whose values are pre-built HTML (not escaped)
+const HTML_RAW_KEYS = new Set([
+  'submission_link', 'judging_link', 'history_link',
+  'results_table', 'entry_summary',
+])
+
+function htmlEsc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+export function applyTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\[([a-z_]+)\]/gi, (match, key: string) => {
+    if (!(key in vars)) return match
+    return HTML_RAW_KEYS.has(key) ? vars[key] : htmlEsc(vars[key])
+  })
+}
+
+export async function getEmailTemplate(
+  key: string,
+): Promise<{ subject_template: string; body_html: string } | null> {
+  try {
+    const res = await getPool().query(
+      `SELECT subject_template, body_html FROM email_templates WHERE key = $1`,
+      [key],
+    )
+    return res.rows[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+function makeButton(href: string, label: string): string {
+  return `<a href="${href}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">${label}</a>`
+}
+
 // ─── Email templates ──────────────────────────────────────────────────────────
 
 const appUrl = process.env.APP_URL ?? 'http://localhost:5173'
 
-export function submissionInviteEmail(opts: {
+export async function submissionInviteEmail(opts: {
   memberName: string
   competitionName: string
   closesAt: string | null
   token: string
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
   const closes = opts.closesAt
     ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'TBA'
+
+  const tmpl = await getEmailTemplate('submission_invite')
+  if (tmpl) {
+    const vars = {
+      member_name: opts.memberName,
+      competition_name: opts.competitionName,
+      closes_date: closes,
+      submission_link: makeButton(link, 'Submit your entries'),
+      submission_url: link,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
 
   const subject = `Submit your entries – ${opts.competitionName}`
   const html = `
 <p>Hi ${opts.memberName},</p>
 <p>Entries are now open for <strong>${opts.competitionName}</strong>.</p>
 <p>Submissions close on <strong>${closes}</strong>.</p>
-<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">Submit your entries</a></p>
+<p>${makeButton(link, 'Submit your entries')}</p>
 <p>Or copy this link: ${link}</p>
 <p>You can submit up to 1 projected image (PROJIM) and up to 2 printed images (PRINTIM).</p>
 <p>—<br>Wairarapa Camera Club</p>
@@ -87,43 +136,71 @@ export function submissionInviteEmail(opts: {
   return { subject, html }
 }
 
-export function submissionReminderEmail(opts: {
+export async function submissionReminderEmail(opts: {
   memberName: string
   competitionName: string
   closesAt: string | null
   token: string
   entryCount: number
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
   const closes = opts.closesAt
     ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'soon'
+  const entrySummary = opts.entryCount > 0
+    ? `<p>You've already submitted ${opts.entryCount} entr${opts.entryCount === 1 ? 'y' : 'ies'}. You can still add more or make changes.</p>`
+    : `<p>You haven't submitted any entries yet.</p>`
+
+  const tmpl = await getEmailTemplate('submission_reminder')
+  if (tmpl) {
+    const vars = {
+      member_name: opts.memberName,
+      competition_name: opts.competitionName,
+      closes_date: closes,
+      submission_link: makeButton(link, 'Manage your entries'),
+      submission_url: link,
+      entry_summary: entrySummary,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
 
   const subject = `Reminder: entries close ${closes} – ${opts.competitionName}`
   const html = `
 <p>Hi ${opts.memberName},</p>
 <p>Just a reminder that entries for <strong>${opts.competitionName}</strong> close on <strong>${closes}</strong>.</p>
-${opts.entryCount > 0
-    ? `<p>You've already submitted ${opts.entryCount} entr${opts.entryCount === 1 ? 'y' : 'ies'}. You can still add more or make changes.</p>`
-    : `<p>You haven't submitted any entries yet.</p>`}
-<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">Manage your entries</a></p>
+${entrySummary}
+<p>${makeButton(link, 'Manage your entries')}</p>
 <p>—<br>Wairarapa Camera Club</p>
 `
   return { subject, html }
 }
 
-export function judgingInviteEmail(opts: {
+export async function judgingInviteEmail(opts: {
   judgeName: string
   competitionName: string
   judgingClosesAt: string | null
   projimCount: number
   printimCount: number
   token: string
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/judge/${opts.token}`
   const closes = opts.judgingClosesAt
     ? new Date(opts.judgingClosesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'TBA'
+
+  const tmpl = await getEmailTemplate('judging_invite')
+  if (tmpl) {
+    const vars = {
+      judge_name: opts.judgeName,
+      competition_name: opts.competitionName,
+      judging_closes_date: closes,
+      projim_count: String(opts.projimCount),
+      printim_count: String(opts.printimCount),
+      judging_link: makeButton(link, 'Start judging'),
+      judging_url: link,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
 
   const subject = `Judge invitation – ${opts.competitionName}`
   const html = `
@@ -131,23 +208,34 @@ export function judgingInviteEmail(opts: {
 <p>You've been invited to judge <strong>${opts.competitionName}</strong>.</p>
 <p>There are <strong>${opts.projimCount} projected</strong> and <strong>${opts.printimCount} printed</strong> images to judge.</p>
 <p>Please complete your judging by <strong>${closes}</strong>.</p>
-<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">Start judging</a></p>
+<p>${makeButton(link, 'Start judging')}</p>
 <p>Or copy this link: ${link}</p>
 <p>—<br>Wairarapa Camera Club</p>
 `
   return { subject, html }
 }
 
-export function memberHistoryEmail(opts: {
+export async function memberHistoryEmail(opts: {
   memberName: string
   token: string
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/history/${opts.token}`
+
+  const tmpl = await getEmailTemplate('member_history_link')
+  if (tmpl) {
+    const vars = {
+      member_name: opts.memberName,
+      history_link: makeButton(link, 'View my photo history'),
+      history_url: link,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
   const subject = `Your Wairarapa Camera Club photo history`
   const html = `
 <p>Hi ${opts.memberName},</p>
 <p>Here's your personal link to view all your competition entries and scores.</p>
-<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">View my photo history</a></p>
+<p>${makeButton(link, 'View my photo history')}</p>
 <p>Or copy this link: ${link}</p>
 <p>This link is unique to you — please don't share it.</p>
 <p>—<br>Wairarapa Camera Club</p>
@@ -155,12 +243,20 @@ export function memberHistoryEmail(opts: {
   return { subject, html }
 }
 
-export function subsReminderEmail(opts: {
+export async function subsReminderEmail(opts: {
   memberName: string
   amountDue: string | null
   reminderNumber: 1 | 2
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const amount = opts.amountDue ? `$${parseFloat(opts.amountDue).toFixed(2)}` : 'your annual subscription'
+  const templateKey = opts.reminderNumber === 1 ? 'subs_reminder_first' : 'subs_reminder_second'
+
+  const tmpl = await getEmailTemplate(templateKey)
+  if (tmpl) {
+    const vars = { member_name: opts.memberName, amount }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
   const subject = opts.reminderNumber === 1
     ? `Subscription renewal reminder – Wairarapa Camera Club`
     : `Final reminder: subscription renewal – Wairarapa Camera Club`
@@ -177,14 +273,13 @@ ${urgency}
   return { subject, html }
 }
 
-export function resultsNotificationEmail(opts: {
+export async function resultsNotificationEmail(opts: {
   memberName: string
   competitionName: string
   entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null }>
   token: string
-}): { subject: string; html: string } {
+}): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/history/${opts.token}`
-  const subject = `Results – ${opts.competitionName}`
 
   const rows = opts.entries.map(e => {
     const award = e.award ? e.award.replace(/_/g, ' ') : 'Not placed'
@@ -199,10 +294,7 @@ export function resultsNotificationEmail(opts: {
     </tr>${comment}`
   }).join('')
 
-  const html = `
-<p>Hi ${opts.memberName},</p>
-<p>Results are in for <strong>${opts.competitionName}</strong>!</p>
-<table style="border-collapse:collapse;width:100%;max-width:500px">
+  const resultsTable = `<table style="border-collapse:collapse;width:100%;max-width:500px">
   <thead>
     <tr style="background:#fef3c7">
       <th style="padding:6px 8px;text-align:left">Title</th>
@@ -211,8 +303,26 @@ export function resultsNotificationEmail(opts: {
     </tr>
   </thead>
   <tbody>${rows}</tbody>
-</table>
-<p><a href="${link}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">View full history</a></p>
+</table>`
+
+  const tmpl = await getEmailTemplate('results_notification')
+  if (tmpl) {
+    const vars = {
+      member_name: opts.memberName,
+      competition_name: opts.competitionName,
+      results_table: resultsTable,
+      history_link: makeButton(link, 'View full history'),
+      history_url: link,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
+  const subject = `Results – ${opts.competitionName}`
+  const html = `
+<p>Hi ${opts.memberName},</p>
+<p>Results are in for <strong>${opts.competitionName}</strong>!</p>
+${resultsTable}
+<p>${makeButton(link, 'View full history')}</p>
 <p>—<br>Wairarapa Camera Club</p>
 `
   return { subject, html }

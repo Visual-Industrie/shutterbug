@@ -272,6 +272,7 @@ app.delete('/api/competitions/:id', async (req, res) => {
     await getPool().query(`DELETE FROM member_points  WHERE competition_id = $1`, [id])
     await getPool().query(`DELETE FROM entries         WHERE competition_id = $1`, [id])
     await getPool().query(`UPDATE email_log SET token_id = NULL WHERE token_id IN (SELECT id FROM tokens WHERE competition_id = $1)`, [id])
+    await getPool().query(`UPDATE email_log SET competition_id = NULL WHERE competition_id = $1`, [id])
     await getPool().query(`DELETE FROM tokens          WHERE competition_id = $1`, [id])
     await getPool().query(`DELETE FROM competition_judges WHERE competition_id = $1`, [id])
     const result = await getPool().query(`DELETE FROM competitions WHERE id = $1 RETURNING id`, [id])

@@ -57,7 +57,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function Members() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
+  const [status, setStatus] = useState('active')
   const [type, setType] = useState('all')
   const [historyMsg, setHistoryMsg] = useState<Record<string, 'sending' | 'sent' | 'err'>>({})
 

@@ -21,7 +21,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `super_admin` | Full access including destructive actions |
 | `competition_secretary` | Competition management |
 | `treasurer` | Member/subscription records |
-| `president` | Read-only |
+| `president` | Read-only + email template editing |
 | `committee` | Read-only |
 
 ---
@@ -29,10 +29,10 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 ## Completed Features
 
 ### Foundation
-- **Initial schema** — all tables: `members`, `applicants`, `seasons`, `competitions`, `competition_judges`, `judges`, `tokens`, `entries`, `member_points`, `admin_users`, `settings`, `email_log`, `committee_roles`, `committee_members`
+- **Initial schema** — all tables: `members`, `applicants`, `seasons`, `competitions`, `competition_judges`, `judges`, `tokens`, `entries`, `member_points`, `admin_users`, `settings`, `email_log`, `committee_roles`, `committee_members`, `email_templates`
 - **Drizzle ORM** type-safe schema (`src/db/schema.ts`)
 - **Single Vercel serverless function** (`api/index.ts`) handling all `/api/*` routes via Express — consolidates to stay within Vercel Hobby plan's 12-function limit
-- **Local dev API server** (`scripts/dev-api.ts`) mirroring all routes, proxied via Vite
+- **Local dev API server** (`scripts/dev-api.ts`) — thin wrapper that dynamically imports `api/index.ts` after loading `.env.local`; no duplication of routes
 - **Google Sheets one-time import script** (`scripts/import-click-data.ts`) — seeds members from `WCCDatabase.xlsx`
 - **Admin seed script** (`scripts/seed-admin.ts`) — creates initial super_admin user
 
@@ -65,6 +65,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 - Competition status flow: `draft` → `open` → `closed` → `judging` → `complete` (manually advanced by admin)
 - Season auto-derived from `opens_at` year; upserted automatically
 - Judge assignment per competition (`PUT /api/competitions/:id/judge`)
+- **Bulk entry download** — "Download all entries" and "Download PROJIM only" buttons on Competition Detail; server streams a zip of all Drive images
 
 ### Email Actions (from Competition Detail page)
 - Send submission invites to all active members
@@ -127,14 +128,14 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 - `POST /api/auth/invite`, `POST /api/auth/set-password`
 - Schema: `admin_users` gains `member_id`, `invite_token`, `invite_expires_at`; `password_hash` made nullable
 
-### Email Log
-- Email log page (`/email`) — searchable list of all sent emails with expandable body preview
-- All emails (success and failure) written to `email_log` regardless of send result
-
-### UI / Navigation
-- Mobile-friendly collapsible sidebar navigation
-- TanStack Query (`@tanstack/react-query`) used throughout admin pages for data fetching and cache invalidation
-- Consistent toast/modal patterns across the app
+### Email — Log, Compose & Templates
+- **Email log** (`/email`) — Log tab with searchable list of all sent emails, expandable body preview
+- **Compose** — slide-in panel to send a one-off email to all active members, members with unpaid subs, or a specific member (search by last name)
+- **Subscription reminders** — Settings → Subscriptions tab; manual "Send first reminder" / "Send second reminder" buttons; automated via GitHub Actions cron (Dec 13 and Jan 13, 8am NZDT) calling `POST /api/email/subs-reminder` with `x-cron-secret` auth
+- **Email template editor** — Templates tab on the Email page; TipTap rich-text body editor with bold/italic/list toolbar; subject line text input; `[placeholder]` syntax with a reference panel (click to copy); role-gated save (super_admin, president, competition_secretary only)
+- 7 editable templates: `submission_invite`, `submission_reminder`, `judging_invite`, `member_history_link`, `results_notification`, `subs_reminder_first`, `subs_reminder_second`
+- Templates stored in `email_templates` table; API falls back to hardcoded defaults if a row is missing
+- `GET /api/email-templates`, `PATCH /api/email-templates/:key`
 
 ---
 
@@ -147,20 +148,18 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `20260317000001_judges_social_fields.sql` | Add website/facebook/instagram to judges |
 | `20260317000002_committee.sql` | Add committee_roles and committee_members tables |
 | `20260317000003_admin_invite.sql` | Add invite flow columns to admin_users |
+| `20260318000000_email_templates.sql` | Add email_templates table seeded with defaults |
 
 ---
 
 ## Known Limitations / Tech Debt
 
-- `scripts/dev-api.ts` is a hand-maintained mirror of `api/index.ts` for local development. It has drifted before and caused confusion. Consolidating these would reduce maintenance burden.
 - No automated tests.
 - Competition status transitions are manual (admin clicks through states) — no automated date-based status changes.
-- Bulk image download (zip export from Drive for club night projection) is planned but not yet built.
-- One-off / bulk email sending (compose and send to members) is planned but not yet built.
-- Scheduled email automations (subs reminders) are planned but not yet built.
 - No member-facing leaderboard (public view) — current leaderboard is admin-only.
-- Judge guidelines page (static content shown to judges) not yet built.
 - No way to resend a competition's results email to a specific member.
+- Judge guidelines page (static content shown to judges) not yet built.
+- API error handling is inconsistent on the frontend — some pages show toasts, some inline messages, some nothing.
 
 ---
 
@@ -181,6 +180,6 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `/competitions/:id` | Admin | Event detail & management |
 | `/judges` | Admin | Judge management |
 | `/leaderboard` | Admin | Season points leaderboard |
-| `/email` | Admin | Email log |
+| `/email` | Admin | Email log, compose, and template editor |
 | `/profile` | Admin | Change password |
 | `/settings` | Admin (super_admin) | App settings + committee management |

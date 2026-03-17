@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface Competition {
   id: string
@@ -76,6 +77,7 @@ const inputCls = 'w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm f
 export default function Competitions() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
@@ -83,6 +85,8 @@ export default function Competitions() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<AddForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const [deleteTarget, setDeleteTarget] = useState<Competition | null>(null)
 
   const { data: allComps = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['competitions'],
@@ -136,6 +140,14 @@ export default function Competitions() {
     },
     onError: (err) => {
       setFormError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/competitions/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['competitions'] })
+      setDeleteTarget(null)
     },
   })
 
@@ -234,11 +246,12 @@ export default function Competitions() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Judge</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">PRINT</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">PROJ</th>
+                {user?.role === 'super_admin' && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {comps.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No events found</td></tr>
+                <tr><td colSpan={user?.role === 'super_admin' ? 10 : 9} className="px-4 py-8 text-center text-gray-400">No events found</td></tr>
               )}
               {comps.map(c => (
                 <tr key={c.id} className="hover:bg-gray-50 transition-colors">
@@ -259,12 +272,57 @@ export default function Competitions() {
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600">{c.printim_count || '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-600">{c.projim_count || '—'}</td>
+                  {user?.role === 'super_admin' && (
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setDeleteTarget(c)}
+                        className="text-xs text-gray-300 hover:text-red-500 transition-colors"
+                        title="Delete competition"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteTarget(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-5">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Delete event?</h2>
+              <p className="text-sm text-gray-600 mb-3">
+                You are about to permanently delete <strong>{deleteTarget.name}</strong>.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 space-y-1">
+                <p className="font-medium">This is a destructive action and cannot be undone.</p>
+                <p>All entries ({deleteTarget.printim_count + deleteTarget.projim_count} total), tokens, judging data, and points records for this competition will be permanently deleted.</p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate(deleteTarget.id)}
+                disabled={deleteMutation.isPending}
+                className="flex-1 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Yes, delete permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Event Modal */}
       {showModal && (

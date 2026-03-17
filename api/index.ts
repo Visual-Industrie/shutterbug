@@ -265,6 +265,23 @@ app.patch('/api/competitions/:id', async (req, res) => {
   res.json({ ok: true })
 })
 
+app.delete('/api/competitions/:id', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return
+  const { id } = req.params
+  try {
+    await getPool().query(`DELETE FROM member_points  WHERE competition_id = $1`, [id])
+    await getPool().query(`DELETE FROM entries         WHERE competition_id = $1`, [id])
+    await getPool().query(`DELETE FROM tokens          WHERE competition_id = $1`, [id])
+    await getPool().query(`DELETE FROM competition_judges WHERE competition_id = $1`, [id])
+    const result = await getPool().query(`DELETE FROM competitions WHERE id = $1 RETURNING id`, [id])
+    if (!result.rows.length) return void res.status(404).json({ error: 'Competition not found' })
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('DELETE /api/competitions/:id', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 app.put('/api/competitions/:id/judge', async (req, res) => {
   if (!requireAuth(req, res)) return
   const { judge_id } = req.body ?? {}

@@ -427,70 +427,105 @@ app.patch('/api/settings', async (req, res) => {
 
 app.get('/api/committee/roles', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const result = await getPool().query(
-    `SELECT id, name, is_officer, sort_order FROM committee_roles ORDER BY sort_order, name`
-  )
-  res.json(result.rows)
+  try {
+    const result = await getPool().query(
+      `SELECT id, name, is_officer, sort_order FROM committee_roles ORDER BY sort_order, name`
+    )
+    res.json(result.rows)
+  } catch (err) {
+    console.error('GET /api/committee/roles', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.post('/api/committee/roles', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return
-  const { name } = req.body ?? {}
-  if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
-  const result = await getPool().query(
-    `INSERT INTO committee_roles (name) VALUES ($1) RETURNING id, name, is_officer, sort_order`,
-    [name.trim()],
-  )
-  res.status(201).json(result.rows[0])
+  try {
+    const { name } = req.body ?? {}
+    if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
+    const result = await getPool().query(
+      `INSERT INTO committee_roles (name) VALUES ($1) RETURNING id, name, is_officer, sort_order`,
+      [name.trim()],
+    )
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    console.error('POST /api/committee/roles', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.delete('/api/committee/roles/:id', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return
-  await getPool().query(`DELETE FROM committee_roles WHERE id = $1`, [req.params.id])
-  res.json({ ok: true })
+  try {
+    await getPool().query(`DELETE FROM committee_roles WHERE id = $1`, [req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('DELETE /api/committee/roles/:id', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.get('/api/committee/members', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const result = await getPool().query(`
-    SELECT cm.id, cm.starts_at, cm.ends_at, cm.notes, cm.member_id,
-           m.first_name, m.last_name, m.email, m.membership_number,
-           r.id AS role_id, r.name AS role_name, r.is_officer, r.sort_order
-    FROM committee_members cm
-    JOIN committee_roles r ON r.id = cm.role_id
-    LEFT JOIN members m ON m.id = cm.member_id
-    ORDER BY cm.ends_at NULLS FIRST, r.sort_order, m.last_name
-  `)
-  res.json(result.rows)
+  try {
+    const result = await getPool().query(`
+      SELECT cm.id, cm.starts_at, cm.ends_at, cm.notes, cm.member_id,
+             m.first_name, m.last_name, m.email, m.membership_number,
+             r.id AS role_id, r.name AS role_name, r.is_officer, r.sort_order
+      FROM committee_members cm
+      JOIN committee_roles r ON r.id = cm.role_id
+      LEFT JOIN members m ON m.id = cm.member_id
+      ORDER BY cm.ends_at NULLS FIRST, r.sort_order, m.last_name
+    `)
+    res.json(result.rows)
+  } catch (err) {
+    console.error('GET /api/committee/members', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.post('/api/committee/members', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return
-  const { member_id, role_id, starts_at, notes } = req.body ?? {}
-  if (!role_id) return void res.status(400).json({ error: 'role_id is required' })
-  if (!starts_at) return void res.status(400).json({ error: 'starts_at is required' })
-  const result = await getPool().query(
-    `INSERT INTO committee_members (member_id, role_id, starts_at, notes) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [member_id || null, role_id, starts_at, notes?.trim() || null],
-  )
-  res.status(201).json({ id: result.rows[0].id })
+  try {
+    const { member_id, role_id, starts_at, notes } = req.body ?? {}
+    if (!role_id) return void res.status(400).json({ error: 'role_id is required' })
+    if (!starts_at) return void res.status(400).json({ error: 'starts_at is required' })
+    const result = await getPool().query(
+      `INSERT INTO committee_members (member_id, role_id, starts_at, notes) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [member_id || null, role_id, starts_at, notes?.trim() || null],
+    )
+    res.status(201).json({ id: result.rows[0].id })
+  } catch (err) {
+    console.error('POST /api/committee/members', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.patch('/api/committee/members/:id', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return
-  const { role_id, starts_at, ends_at, notes } = req.body ?? {}
-  const result = await getPool().query(
-    `UPDATE committee_members SET role_id=$1, starts_at=$2, ends_at=$3, notes=$4 WHERE id=$5 RETURNING id`,
-    [role_id, starts_at, ends_at || null, notes?.trim() || null, req.params.id],
-  )
-  if (!result.rows.length) return void res.status(404).json({ error: 'Not found' })
-  res.json({ ok: true })
+  try {
+    const { role_id, starts_at, ends_at, notes } = req.body ?? {}
+    const result = await getPool().query(
+      `UPDATE committee_members SET role_id=$1, starts_at=$2, ends_at=$3, notes=$4 WHERE id=$5 RETURNING id`,
+      [role_id, starts_at, ends_at || null, notes?.trim() || null, req.params.id],
+    )
+    if (!result.rows.length) return void res.status(404).json({ error: 'Not found' })
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('PATCH /api/committee/members/:id', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 app.delete('/api/committee/members/:id', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return
-  await getPool().query(`DELETE FROM committee_members WHERE id = $1`, [req.params.id])
-  res.json({ ok: true })
+  try {
+    await getPool().query(`DELETE FROM committee_members WHERE id = $1`, [req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('DELETE /api/committee/members/:id', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 // ── Submission portal (public, token-gated) ───────────────────────────────────
@@ -679,6 +714,12 @@ app.get('/api/history/:token', async (req, res) => {
   const data = await getMemberHistory(req.params.token)
   if (!data) return void res.status(404).json({ error: 'Invalid or expired link' })
   res.json(data)
+})
+
+// Global error handler — catches any uncaught async throws from route handlers
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled route error', err)
+  res.status(500).json({ error: err.message ?? 'Internal server error' })
 })
 
 export default app

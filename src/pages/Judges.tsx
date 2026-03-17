@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
@@ -136,16 +137,14 @@ function fmt(d: string | null) {
 }
 
 export default function Judges() {
-  const [judges, setJudges] = useState<Judge[]>([])
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [onlyAvailable, setOnlyAvailable] = useState(false)
-  const [loading, setLoading] = useState(true)
 
   // Edit sidebar
   const [editing, setEditing] = useState<Judge | null>(null)
   const [showEdit, setShowEdit] = useState(false)
   const [form, setForm] = useState<JudgeForm>(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   // View modal
@@ -153,27 +152,38 @@ export default function Judges() {
   const [viewComps, setViewComps] = useState<JudgedComp[]>([])
   const [viewLoading, setViewLoading] = useState(false)
 
-  async function load() {
-    setLoading(true)
-    let q = supabase
-      .from('judges')
-      .select('id,name,email,bio,address,rating,is_available,website,facebook,instagram,competition_judges(id)')
-      .order('name')
+  const { data: judges = [], isLoading } = useQuery<Judge[]>({
+    queryKey: ['judges', search, onlyAvailable],
+    queryFn: async () => {
+      let q = supabase
+        .from('judges')
+        .select('id,name,email,bio,address,rating,is_available,website,facebook,instagram,competition_judges(id)')
+        .order('name')
 
-    if (onlyAvailable) q = q.eq('is_available', true)
-    if (search) q = q.ilike('name', `%${search}%`)
+      if (onlyAvailable) q = q.eq('is_available', true)
+      if (search) q = q.ilike('name', `%${search}%`)
 
-    const { data } = await q
-    setJudges(
-      (data ?? []).map((j: Record<string, unknown>) => ({
+      const { data } = await q
+      return (data ?? []).map((j: Record<string, unknown>) => ({
         ...(j as Omit<Judge, 'comp_count'>),
         comp_count: Array.isArray(j.competition_judges) ? j.competition_judges.length : 0,
       }))
-    )
-    setLoading(false)
-  }
+    },
+  })
 
-  useEffect(() => { load() }, [search, onlyAvailable])
+  const saveMutation = useMutation({
+    mutationFn: ({ id, form }: { id: string | null; form: JudgeForm }) =>
+      id
+        ? apiFetch(`/api/judges/${id}`, { method: 'PATCH', body: JSON.stringify(form) })
+        : apiFetch('/api/judges', { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: () => {
+      setShowEdit(false)
+      queryClient.invalidateQueries({ queryKey: ['judges'] })
+    },
+    onError: (err) => {
+      setFormError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
 
   function openEdit(j: Judge) {
     setEditing(j)
@@ -221,21 +231,8 @@ export default function Judges() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     setFormError(null)
-    try {
-      if (editing) {
-        await apiFetch(`/api/judges/${editing.id}`, { method: 'PATCH', body: JSON.stringify(form) })
-      } else {
-        await apiFetch('/api/judges', { method: 'POST', body: JSON.stringify(form) })
-      }
-      setShowEdit(false)
-      await load()
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setSaving(false)
-    }
+    saveMutation.mutate({ id: editing?.id ?? null, form })
   }
 
   return (
@@ -267,7 +264,7 @@ export default function Judges() {
         </label>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center text-gray-400 py-8">Loading…</div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -484,8 +481,8 @@ export default function Judges() {
               <button type="button" onClick={() => setShowEdit(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
-              <button type="submit" disabled={saving} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Add judge'}
+              <button type="submit" disabled={saveMutation.isPending} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Add judge'}
               </button>
             </div>
           </div>

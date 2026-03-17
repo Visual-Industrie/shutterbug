@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 
 interface LeaderRow {
@@ -18,28 +19,23 @@ const MEDALS = ['🥇', '🥈', '🥉']
 
 export default function Leaderboard() {
   const [tab, setTab] = useState<'combined' | 'printim' | 'projim'>('combined')
-  const [seasons, setSeasons] = useState<Season[]>([])
   const [seasonId, setSeasonId] = useState<string>('')
-  const [rows, setRows] = useState<LeaderRow[]>([])
-  const [loading, setLoading] = useState(true)
 
-  // Load seasons + default to current event year
-  useEffect(() => {
-    async function init() {
+  const { data: seasons = [] } = useQuery<Season[]>({
+    queryKey: ['seasons'],
+    queryFn: async () => {
       const [{ data: all }, { data: current }] = await Promise.all([
         supabase.from('seasons').select('id, year').order('year', { ascending: false }),
         supabase.from('seasons').select('id').eq('is_current_event_year', true).single(),
       ])
-      setSeasons(all ?? [])
-      if (current) setSeasonId(current.id)
-    }
-    init()
-  }, [])
+      if (current && !seasonId) setSeasonId(current.id)
+      return (all ?? []) as Season[]
+    },
+  })
 
-  useEffect(() => {
-    if (!seasonId) return
-    async function load() {
-      setLoading(true)
+  const { data: rows = [], isLoading } = useQuery<LeaderRow[]>({
+    queryKey: ['points', seasonId, tab],
+    queryFn: async () => {
       const { data } = await supabase
         .from('member_points')
         .select('member_id, entry_type, points, members(first_name, last_name)')
@@ -65,19 +61,16 @@ export default function Leaderboard() {
         }
       }
 
-      const sorted = Array.from(totals.values())
+      return Array.from(totals.values())
         .sort((a, b) => {
           const av = tab === 'projim' ? a.projim : tab === 'printim' ? a.printim : a.total
           const bv = tab === 'projim' ? b.projim : tab === 'printim' ? b.printim : b.total
           return bv - av
         })
         .filter(r => (tab === 'projim' ? r.projim : tab === 'printim' ? r.printim : r.total) > 0)
-
-      setRows(sorted)
-      setLoading(false)
-    }
-    load()
-  }, [seasonId, tab])
+    },
+    enabled: !!seasonId,
+  })
 
   const selectedYear = seasons.find(s => s.id === seasonId)?.year
 
@@ -119,7 +112,7 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center text-gray-400 py-8">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="text-center text-gray-400 py-8">No points recorded for {selectedYear}</div>

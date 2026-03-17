@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { apiFetch } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
@@ -85,53 +86,51 @@ function memberName(m: Pick<CommitteeMember, 'first_name' | 'last_name' | 'membe
 
 export default function Settings() {
   const { user } = useAuth()
-  if (user?.role !== 'super_admin') return <Navigate to="/" replace />
+  const queryClient = useQueryClient()
 
   const [tab, setTab] = useState('comp')
 
   // ── Competition defaults state ─────────────────────────────────────────────
-  const [rows, setRows] = useState<SettingRow[]>([])
   const [draft, setDraft] = useState<Record<string, string>>({})
-  const [compLoading, setCompLoading] = useState(true)
-  const [compSaving, setCompSaving] = useState(false)
   const [compSaved, setCompSaved] = useState(false)
-  const [compError, setCompError] = useState<string | null>(null)
 
+  const { data: rows = [], isLoading: compLoading, error: compError } = useQuery<SettingRow[]>({
+    queryKey: ['settings', 'comp'],
+    queryFn: () => apiFetch<SettingRow[]>('/api/settings?section=COMP'),
+  })
+
+  // Initialise draft when rows first arrive
   useEffect(() => {
-    setCompLoading(true)
-    apiFetch<SettingRow[]>('/api/settings?section=COMP')
-      .then(data => {
-        setRows(data)
-        const initial: Record<string, string> = {}
-        data.forEach(r => { initial[r.key] = r.value ?? r.default_value ?? '' })
-        setDraft(initial)
-      })
-      .catch(err => setCompError(err.message))
-      .finally(() => setCompLoading(false))
-  }, [])
+    if (rows.length > 0) {
+      const initial: Record<string, string> = {}
+      rows.forEach(r => { initial[r.key] = r.value ?? r.default_value ?? '' })
+      setDraft(initial)
+    }
+  }, [rows])
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: (draft: Record<string, string>) =>
+      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(draft) }),
+    onSuccess: () => {
+      setCompSaved(true)
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    },
+  })
 
   function rowFor(key: string) { return rows.find(r => r.key === key) }
   function setDraftKey(key: string, val: string) { setCompSaved(false); setDraft(d => ({ ...d, [key]: val })) }
 
   async function handleCompSave(e: React.FormEvent) {
     e.preventDefault()
-    setCompSaving(true); setCompError(null); setCompSaved(false)
-    try {
-      await apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(draft) })
-      setCompSaved(true)
-    } catch (err) { setCompError(err instanceof Error ? err.message : 'Save failed') }
-    finally { setCompSaving(false) }
+    setCompSaved(false)
+    saveSettingsMutation.mutate(draft)
   }
 
   // ── Committee state ────────────────────────────────────────────────────────
-  const [roles, setRoles] = useState<CommitteeRole[]>([])
-  const [members, setMembers] = useState<CommitteeMember[]>([])
-  const [committeeLoading, setCommitteeLoading] = useState(false)
   const [showFormer, setShowFormer] = useState(false)
 
   // New role input
   const [newRoleName, setNewRoleName] = useState('')
-  const [roleAdding, setRoleAdding] = useState(false)
 
   // Add member modal
   const [showAdd, setShowAdd] = useState(false)
@@ -141,7 +140,6 @@ export default function Settings() {
   const [addRoleId, setAddRoleId] = useState('')
   const [addStartsAt, setAddStartsAt] = useState(today())
   const [addNotes, setAddNotes] = useState('')
-  const [addSaving, setAddSaving] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
 
   // Edit member modal
@@ -150,53 +148,86 @@ export default function Settings() {
   const [editStartsAt, setEditStartsAt] = useState('')
   const [editEndsAt, setEditEndsAt] = useState('')
   const [editNotes, setEditNotes] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
-  async function loadCommittee() {
-    setCommitteeLoading(true)
-    const [rolesData, membersData] = await Promise.all([
-      apiFetch<CommitteeRole[]>('/api/committee/roles'),
-      apiFetch<CommitteeMember[]>('/api/committee/members'),
-    ])
-    setRoles(rolesData)
-    setMembers(membersData)
-    setCommitteeLoading(false)
-  }
+  const { data: committeeData, isLoading: committeeLoading } = useQuery<{ roles: CommitteeRole[]; members: CommitteeMember[] }>({
+    queryKey: ['committee'],
+    queryFn: async () => {
+      const [rolesData, membersData] = await Promise.all([
+        apiFetch<CommitteeRole[]>('/api/committee/roles'),
+        apiFetch<CommitteeMember[]>('/api/committee/members'),
+      ])
+      return { roles: rolesData, members: membersData }
+    },
+    enabled: tab === 'committee',
+  })
 
-  useEffect(() => {
-    if (tab === 'committee') loadCommittee()
-  }, [tab])
+  const roles = committeeData?.roles ?? []
+  const members = committeeData?.members ?? []
+
+  const addRoleMutation = useMutation({
+    mutationFn: (name: string) =>
+      apiFetch('/api/committee/roles', { method: 'POST', body: JSON.stringify({ name }) }),
+    onSuccess: () => {
+      setNewRoleName('')
+      queryClient.invalidateQueries({ queryKey: ['committee'] })
+    },
+  })
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/committee/roles/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['committee'] }),
+  })
+
+  const addMemberMutation = useMutation({
+    mutationFn: (body: { member_id: string | null; role_id: string; starts_at: string; notes: string }) =>
+      apiFetch('/api/committee/members', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setShowAdd(false)
+      queryClient.invalidateQueries({ queryKey: ['committee'] })
+    },
+    onError: (err) => setAddError(err instanceof Error ? err.message : 'Failed'),
+  })
+
+  const editMemberMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { role_id: string; starts_at: string; ends_at: string | null; notes: string } }) =>
+      apiFetch(`/api/committee/members/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setEditTarget(null)
+      queryClient.invalidateQueries({ queryKey: ['committee'] })
+    },
+    onError: (err) => setEditError(err instanceof Error ? err.message : 'Failed'),
+  })
+
+  const deleteMemberMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/committee/members/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['committee'] }),
+  })
+
+  // Guard — must come after all hooks
+  if (user?.role !== 'super_admin') return <Navigate to="/" replace />
 
   // Member search
-  useEffect(() => {
-    if (!showAdd) return
-    if (!memberSearch.trim()) { setMemberOptions([]); return }
-    supabase
+  async function searchMembers(q: string) {
+    if (!q.trim()) { setMemberOptions([]); return }
+    const { data } = await supabase
       .from('members')
       .select('id, first_name, last_name, email, membership_number')
-      .ilike('last_name', `%${memberSearch}%`)
+      .ilike('last_name', `%${q}%`)
       .eq('status', 'active')
       .order('last_name')
       .limit(20)
-      .then(({ data }) => setMemberOptions((data ?? []) as MemberOption[]))
-  }, [memberSearch, showAdd])
+    setMemberOptions((data ?? []) as MemberOption[])
+  }
 
   async function addRole() {
     if (!newRoleName.trim()) return
-    setRoleAdding(true)
-    try {
-      await apiFetch('/api/committee/roles', { method: 'POST', body: JSON.stringify({ name: newRoleName.trim() }) })
-      setNewRoleName('')
-      await loadCommittee()
-    } catch { /* ignore */ }
-    finally { setRoleAdding(false) }
+    addRoleMutation.mutate(newRoleName.trim())
   }
 
   async function deleteRole(id: string, name: string) {
     if (!confirm(`Delete role "${name}"? This cannot be undone.`)) return
-    await apiFetch(`/api/committee/roles/${id}`, { method: 'DELETE' })
-    await loadCommittee()
+    deleteRoleMutation.mutate(id)
   }
 
   function openAdd() {
@@ -207,16 +238,8 @@ export default function Settings() {
 
   async function handleAdd() {
     if (!addRoleId) { setAddError('Please select a role'); return }
-    setAddSaving(true); setAddError(null)
-    try {
-      await apiFetch('/api/committee/members', {
-        method: 'POST',
-        body: JSON.stringify({ member_id: selectedMember?.id ?? null, role_id: addRoleId, starts_at: addStartsAt, notes: addNotes }),
-      })
-      setShowAdd(false)
-      await loadCommittee()
-    } catch (err) { setAddError(err instanceof Error ? err.message : 'Failed') }
-    finally { setAddSaving(false) }
+    setAddError(null)
+    addMemberMutation.mutate({ member_id: selectedMember?.id ?? null, role_id: addRoleId, starts_at: addStartsAt, notes: addNotes })
   }
 
   function openEdit(m: CommitteeMember) {
@@ -226,31 +249,24 @@ export default function Settings() {
 
   async function handleEdit() {
     if (!editTarget) return
-    setEditSaving(true); setEditError(null)
-    try {
-      await apiFetch(`/api/committee/members/${editTarget.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role_id: editRoleId, starts_at: editStartsAt, ends_at: editEndsAt || null, notes: editNotes }),
-      })
-      setEditTarget(null)
-      await loadCommittee()
-    } catch (err) { setEditError(err instanceof Error ? err.message : 'Failed') }
-    finally { setEditSaving(false) }
+    setEditError(null)
+    editMemberMutation.mutate({
+      id: editTarget.id,
+      body: { role_id: editRoleId, starts_at: editStartsAt, ends_at: editEndsAt || null, notes: editNotes },
+    })
   }
 
   async function endToday(m: CommitteeMember) {
     if (!confirm(`Mark ${memberName(m)} as stepping down today?`)) return
-    await apiFetch(`/api/committee/members/${m.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ role_id: m.role_id, starts_at: m.starts_at, ends_at: today(), notes: m.notes }),
+    editMemberMutation.mutate({
+      id: m.id,
+      body: { role_id: m.role_id, starts_at: m.starts_at, ends_at: today(), notes: m.notes ?? '' },
     })
-    await loadCommittee()
   }
 
   async function deleteMember(m: CommitteeMember) {
     if (!confirm(`Delete this record for ${memberName(m)}? This cannot be undone.`)) return
-    await apiFetch(`/api/committee/members/${m.id}`, { method: 'DELETE' })
-    await loadCommittee()
+    deleteMemberMutation.mutate(m.id)
   }
 
   const current = members.filter(m => !m.ends_at)
@@ -323,11 +339,12 @@ export default function Settings() {
               </div>
             </div>
 
-            {compError && <p className="text-sm text-red-600">{compError}</p>}
+            {compError && <p className="text-sm text-red-600">{(compError as Error).message}</p>}
+            {saveSettingsMutation.error && <p className="text-sm text-red-600">{(saveSettingsMutation.error as Error).message}</p>}
             {compSaved && <p className="text-sm text-green-600">Settings saved.</p>}
             <div className="flex justify-end">
-              <button type="submit" disabled={compSaving} className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {compSaving ? 'Saving…' : 'Save settings'}
+              <button type="submit" disabled={saveSettingsMutation.isPending} className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {saveSettingsMutation.isPending ? 'Saving…' : 'Save settings'}
               </button>
             </div>
           </form>
@@ -370,7 +387,7 @@ export default function Settings() {
                 />
                 <button
                   onClick={addRole}
-                  disabled={!newRoleName.trim() || roleAdding}
+                  disabled={!newRoleName.trim() || addRoleMutation.isPending}
                   className="px-4 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-40 transition-colors"
                 >
                   Add
@@ -485,7 +502,7 @@ export default function Settings() {
                   type="text"
                   placeholder="Start typing…"
                   value={memberSearch}
-                  onChange={e => { setMemberSearch(e.target.value); setSelectedMember(null) }}
+                  onChange={e => { setMemberSearch(e.target.value); setSelectedMember(null); searchMembers(e.target.value) }}
                   className={inputCls}
                 />
                 {memberOptions.length > 0 && !selectedMember && (
@@ -533,8 +550,8 @@ export default function Settings() {
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
               <button onClick={() => setShowAdd(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleAdd} disabled={addSaving} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {addSaving ? 'Adding…' : 'Add member'}
+              <button onClick={handleAdd} disabled={addMemberMutation.isPending} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {addMemberMutation.isPending ? 'Adding…' : 'Add member'}
               </button>
             </div>
           </div>
@@ -578,8 +595,8 @@ export default function Settings() {
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
               <button onClick={() => setEditTarget(null)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleEdit} disabled={editSaving} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {editSaving ? 'Saving…' : 'Save'}
+              <button onClick={handleEdit} disabled={editMemberMutation.isPending} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {editMemberMutation.isPending ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

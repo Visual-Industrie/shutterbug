@@ -19,6 +19,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
     "@tailwindcss/vite": "^4.2.0",
+    "@tanstack/react-query": "^5.90.21",
     "@tiptap/react": "^2.11.5",
     "@tiptap/starter-kit": "^2.11.5",
     "@types/busboy": "^1.5.4",
@@ -50,7 +51,7 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.30.4",
     "pg": "^8.18.0",
-    "supabase": "^2.76.12",
+    "supabase": "^2.79.0",
     "tsx": "^4.21.0",
     "typescript": "~5.7.2",
     "vite": "^6.2.0",

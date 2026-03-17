@@ -1,16 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-
-interface EmailEntry {
-  id: string
-  type: string
-  recipient_email: string
-  recipient_name: string | null
-  subject: string
-  body: string | null
-  sent_at: string
-  error: string | null
-}
 
 const TYPE_LABELS: Record<string, string> = {
   submission_invite: 'Submission invite',
@@ -24,32 +14,26 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export default function EmailLog() {
-  const [emails, setEmails] = useState<EmailEntry[]>([])
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
+  const { data: emails = [], isLoading } = useQuery({
+    queryKey: ['emails', search],
+    queryFn: async () => {
       let q = supabase
         .from('email_log')
         .select('id,type,recipient_email,recipient_name,subject,body,sent_at,error')
         .order('sent_at', { ascending: false })
         .limit(200)
-
       if (search) {
         q = q.or(
           `subject.ilike.%${search}%,recipient_email.ilike.%${search}%,recipient_name.ilike.%${search}%`
         )
       }
-
       const { data } = await q
-      setEmails(data ?? [])
-      setLoading(false)
-    }
-    load()
-  }, [search])
+      return data ?? []
+    },
+  })
 
   function fmt(d: string) {
     return new Date(d).toLocaleString('en-NZ', {
@@ -78,7 +62,7 @@ export default function EmailLog() {
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4"
       />
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center text-gray-400 py-8">Loading…</div>
       ) : emails.length === 0 ? (
         <div className="text-center text-gray-400 py-8">No emails logged yet</div>

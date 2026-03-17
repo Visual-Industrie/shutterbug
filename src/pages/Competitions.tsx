@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
@@ -16,7 +17,6 @@ interface Competition {
   printim_count: number
   projim_count: number
 }
-
 
 interface AddForm {
   name: string
@@ -75,68 +75,75 @@ const inputCls = 'w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm f
 
 export default function Competitions() {
   const navigate = useNavigate()
-  const [comps, setComps] = useState<Competition[]>([])
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
-  const [loading, setLoading] = useState(true)
 
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<AddForm>(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  async function loadComps() {
-    setLoading(true)
-    let q = supabase
-      .from('competitions')
-      .select(`
-        id, name, event_type, status, opens_at, closes_at, judging_closes_at,
-        seasons(year),
-        competition_judges(judges(name))
-      `)
-      .order('opens_at', { ascending: false })
+  const { data: allComps = [], isLoading } = useQuery<Competition[]>({
+    queryKey: ['competitions', status, type],
+    queryFn: async () => {
+      let q = supabase
+        .from('competitions')
+        .select(`
+          id, name, event_type, status, opens_at, closes_at, judging_closes_at,
+          seasons(year),
+          competition_judges(judges(name))
+        `)
+        .order('opens_at', { ascending: false })
 
-    if (status !== 'all') q = q.eq('status', status)
-    if (type !== 'all') q = q.eq('event_type', type)
+      if (status !== 'all') q = q.eq('status', status)
+      if (type !== 'all') q = q.eq('event_type', type)
 
-    const { data } = await q
+      const { data } = await q
 
-    const compIds = (data ?? []).map(c => c.id)
-    let entryCounts: Record<string, { printim: number; projim: number }> = {}
-    if (compIds.length > 0) {
-      const { data: entries } = await supabase
-        .from('entries')
-        .select('competition_id, type')
-        .in('competition_id', compIds)
-      for (const e of entries ?? []) {
-        if (!entryCounts[e.competition_id]) entryCounts[e.competition_id] = { printim: 0, projim: 0 }
-        if (e.type === 'printim') entryCounts[e.competition_id].printim++
-        else entryCounts[e.competition_id].projim++
+      const compIds = (data ?? []).map(c => c.id)
+      let entryCounts: Record<string, { printim: number; projim: number }> = {}
+      if (compIds.length > 0) {
+        const { data: entries } = await supabase
+          .from('entries')
+          .select('competition_id, type')
+          .in('competition_id', compIds)
+        for (const e of entries ?? []) {
+          if (!entryCounts[e.competition_id]) entryCounts[e.competition_id] = { printim: 0, projim: 0 }
+          if (e.type === 'printim') entryCounts[e.competition_id].printim++
+          else entryCounts[e.competition_id].projim++
+        }
       }
-    }
 
-    const rows = (data ?? []).map(c => ({
-      ...c,
-      competition_judges: c.competition_judges as unknown as Array<{ judges: { name: string } | null }>,
-      printim_count: entryCounts[c.id]?.printim ?? 0,
-      projim_count: entryCounts[c.id]?.projim ?? 0,
-    }))
+      return (data ?? []).map(c => ({
+        ...c,
+        competition_judges: c.competition_judges as unknown as Array<{ judges: { name: string } | null }>,
+        printim_count: entryCounts[c.id]?.printim ?? 0,
+        projim_count: entryCounts[c.id]?.projim ?? 0,
+      })) as unknown as Competition[]
+    },
+  })
 
-    const filtered = search
-      ? rows.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-      : rows
+  const comps = search
+    ? allComps.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
+    : allComps
 
-    setComps(filtered as unknown as Competition[])
-    setLoading(false)
-  }
-
-  useEffect(() => { loadComps() }, [search, status, type])
+  const createMutation = useMutation({
+    mutationFn: (form: AddForm) =>
+      apiFetch<{ id: string }>('/api/competitions', { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['competitions'] })
+      setShowModal(false)
+      navigate(`/competitions/${data.id}`)
+    },
+    onError: (err) => {
+      setFormError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
 
   async function openModal() {
     setFormError(null)
     setShowModal(true)
-    // Load defaults from settings, fall back to EMPTY_FORM values
     try {
       const rows = await apiFetch<{ key: string; value: string | null; default_value: string | null }[]>('/api/settings?section=COMP')
       const get = (key: string, fallback: number) => {
@@ -164,20 +171,8 @@ export default function Competitions() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     setFormError(null)
-    try {
-      const data = await apiFetch<{ id: string }>('/api/competitions', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      })
-      setShowModal(false)
-      navigate(`/competitions/${data.id}`)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setSaving(false)
-    }
+    createMutation.mutate(form)
   }
 
   function fmt(d: string | null) {
@@ -226,7 +221,7 @@ export default function Competitions() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
+        {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading…</div>
         ) : (
           <table className="w-full text-sm">
@@ -380,12 +375,11 @@ export default function Competitions() {
               </button>
               <button
                 type="submit"
-                form="add-event-form"
-                disabled={saving}
+                disabled={createMutation.isPending}
                 onClick={handleSubmit}
                 className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
               >
-                {saving ? 'Creating…' : 'Create event'}
+                {createMutation.isPending ? 'Creating…' : 'Create event'}
               </button>
             </div>
           </div>

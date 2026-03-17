@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
@@ -54,40 +55,51 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function Members() {
-  const [members, setMembers] = useState<Member[]>([])
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
-  const [loading, setLoading] = useState(true)
   const [historyMsg, setHistoryMsg] = useState<Record<string, 'sending' | 'sent' | 'err'>>({})
 
-  const [editing, setEditing] = useState<Member | null>(null)  // null = add mode
+  const [editing, setEditing] = useState<Member | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<MemberForm>(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
-    let q = supabase
-      .from('members')
-      .select('id,first_name,last_name,email,phone,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
-      .order('last_name', { ascending: true })
+  const { data: members = [], isLoading } = useQuery({
+    queryKey: ['members', search, status, type],
+    queryFn: async () => {
+      let q = supabase
+        .from('members')
+        .select('id,first_name,last_name,email,phone,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
+        .order('last_name', { ascending: true })
 
-    if (status !== 'all') q = q.eq('status', status)
-    if (type !== 'all') q = q.eq('membership_type', type)
-    if (search) {
-      q = q.or(
-        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,membership_number.eq.${search}`
-      )
-    }
+      if (status !== 'all') q = q.eq('status', status)
+      if (type !== 'all') q = q.eq('membership_type', type)
+      if (search) {
+        q = q.or(
+          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,membership_number.eq.${search}`
+        )
+      }
 
-    const { data } = await q
-    setMembers(data ?? [])
-    setLoading(false)
-  }
+      const { data } = await q
+      return data ?? []
+    },
+  })
 
-  useEffect(() => { load() }, [search, status, type])
+  const saveMutation = useMutation({
+    mutationFn: ({ id, form }: { id: string | null; form: MemberForm }) =>
+      id
+        ? apiFetch(`/api/members/${id}`, { method: 'PATCH', body: JSON.stringify(form) })
+        : apiFetch('/api/members', { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: () => {
+      setShowModal(false)
+      queryClient.invalidateQueries({ queryKey: ['members'] })
+    },
+    onError: (err) => {
+      setFormError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
 
   async function sendHistoryLink(id: string) {
     setHistoryMsg(prev => ({ ...prev, [id]: 'sending' }))
@@ -132,21 +144,8 @@ export default function Members() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     setFormError(null)
-    try {
-      if (editing) {
-        await apiFetch(`/api/members/${editing.id}`, { method: 'PATCH', body: JSON.stringify(form) })
-      } else {
-        await apiFetch('/api/members', { method: 'POST', body: JSON.stringify(form) })
-      }
-      setShowModal(false)
-      await load()
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setSaving(false)
-    }
+    saveMutation.mutate({ id: editing?.id ?? null, form })
   }
 
   function statusBadge(s: string) {
@@ -201,7 +200,7 @@ export default function Members() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
+        {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading…</div>
         ) : (
           <table className="w-full text-sm">
@@ -361,8 +360,8 @@ export default function Members() {
               <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
-              <button type="submit" disabled={saving} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Add member'}
+              <button type="submit" disabled={saveMutation.isPending} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Add member'}
               </button>
             </div>
           </div>

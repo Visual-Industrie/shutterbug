@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 
@@ -73,12 +73,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
-  const [kpis, setKpis] = useState<Kpis | null>(null)
-  const [events, setEvents] = useState<EventRow[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function load() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: async () => {
       const { data: season } = await supabase
         .from('seasons')
         .select('id')
@@ -125,7 +122,7 @@ export default function Dashboard() {
 
       const recentSubmitters = new Set(recentEntries?.map(e => e.member_id)).size
 
-      setKpis({
+      const kpis: Kpis = {
         noJudgeCount: noJudge,
         competitionsRemaining: remaining,
         judgesAvailable: judgesAvailable ?? 0,
@@ -137,9 +134,9 @@ export default function Dashboard() {
         recentSubmitters,
         pendingApplicants: pendingApplicants ?? 0,
         committeeCount: committeeCount ?? 0,
-      })
+      }
 
-      setEvents((comps ?? []).map(c => ({
+      const events: EventRow[] = (comps ?? []).map(c => ({
         id: c.id,
         name: c.name,
         event_type: c.event_type,
@@ -150,21 +147,21 @@ export default function Dashboard() {
         judge_name: (c.competition_judges as unknown as Array<{ judges: { name: string } | null }>)?.[0]?.judges?.name ?? null,
         printim_count: (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'printim').length ?? 0,
         projim_count:  (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'projim').length ?? 0,
-      })))
+      }))
 
-      setLoading(false)
-    }
-    load()
-  }, [])
+      return { kpis, events }
+    },
+  })
 
   function fmt(d: string | null) {
     if (!d) return '—'
     return new Date(d).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })
   }
 
-  if (loading) return <div className="p-8 text-gray-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-gray-400">Loading…</div>
 
-  const k = kpis!
+  const k = data!.kpis
+  const events = data!.events
 
   return (
     <div className="p-8 max-w-7xl">

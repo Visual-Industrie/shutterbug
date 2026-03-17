@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
@@ -104,16 +105,13 @@ function ActionButton({
 
 export default function CompetitionDetail() {
   const { id } = useParams<{ id: string }>()
-  const [comp, setComp] = useState<CompDetail | null>(null)
-  const [entries, setEntries] = useState<EntrySummary[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [working, setWorking] = useState(false)
 
   // Edit competition modal
   const [showEdit, setShowEdit] = useState(false)
   const [editForm, setEditForm] = useState<CompForm | null>(null)
-  const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
   // Single member invite modal
@@ -131,42 +129,55 @@ export default function CompetitionDetail() {
   const [judgeSearch, setJudgeSearch] = useState('')
   const [judgeSaving, setJudgeSaving] = useState(false)
 
-  async function load() {
-    setLoading(true)
-    const { data } = await supabase
-      .from('competitions')
-      .select(`
-        id, name, event_type, status, opens_at, closes_at,
-        judging_opens_at, judging_closes_at,
-        max_projim_entries, max_printim_entries,
-        points_honours, points_highly_commended, points_commended, points_accepted,
-        seasons(year),
-        competition_judges(judges(id, name, email))
-      `)
-      .eq('id', id!)
-      .single()
+  const { data, isLoading } = useQuery({
+    queryKey: ['competition', id],
+    queryFn: async () => {
+      const { data: comp } = await supabase
+        .from('competitions')
+        .select(`
+          id, name, event_type, status, opens_at, closes_at,
+          judging_opens_at, judging_closes_at,
+          max_projim_entries, max_printim_entries,
+          points_honours, points_highly_commended, points_commended, points_accepted,
+          seasons(year),
+          competition_judges(judges(id, name, email))
+        `)
+        .eq('id', id!)
+        .single()
 
-    setComp(data as CompDetail | null)
+      const { data: entryData } = await supabase
+        .from('entries')
+        .select('type, award')
+        .eq('competition_id', id!)
 
-    const { data: entryData } = await supabase
-      .from('entries')
-      .select('type, award')
-      .eq('competition_id', id!)
+      const counts: Record<string, number> = {}
+      for (const e of entryData ?? []) {
+        const key = `${e.type}|${e.award ?? 'none'}`
+        counts[key] = (counts[key] ?? 0) + 1
+      }
+      const entries: EntrySummary[] = Object.entries(counts).map(([k, count]) => {
+        const [type, award] = k.split('|')
+        return { type, award: award === 'none' ? null : award, count }
+      })
 
-    const counts: Record<string, number> = {}
-    for (const e of entryData ?? []) {
-      const key = `${e.type}|${e.award ?? 'none'}`
-      counts[key] = (counts[key] ?? 0) + 1
-    }
-    const summary: EntrySummary[] = Object.entries(counts).map(([k, count]) => {
-      const [type, award] = k.split('|')
-      return { type, award: award === 'none' ? null : award, count }
-    })
-    setEntries(summary)
-    setLoading(false)
-  }
+      return { comp: comp as CompDetail | null, entries }
+    },
+  })
 
-  useEffect(() => { load() }, [id])
+  const editMutation = useMutation({
+    mutationFn: (form: CompForm) =>
+      apiFetch(`/api/competitions/${id}`, { method: 'PATCH', body: JSON.stringify(form) }),
+    onSuccess: () => {
+      setShowEdit(false)
+      queryClient.invalidateQueries({ queryKey: ['competition', id] })
+    },
+    onError: (err) => {
+      setEditError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
+
+  const comp = data?.comp ?? null
+  const entries = data?.entries ?? []
 
   async function doAction(path: string, label: string) {
     setWorking(true)
@@ -196,7 +207,7 @@ export default function CompetitionDetail() {
       setActionMsg({ text: `Failed to advance status: ${error.message}`, ok: false })
     } else {
       setActionMsg({ text: `Status updated to ${next}.`, ok: true })
-      await load()
+      queryClient.invalidateQueries({ queryKey: ['competition', id] })
     }
     setWorking(false)
   }
@@ -223,18 +234,9 @@ export default function CompetitionDetail() {
 
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!editForm || !comp) return
-    setEditSaving(true)
+    if (!editForm) return
     setEditError(null)
-    try {
-      await apiFetch(`/api/competitions/${comp.id}`, { method: 'PATCH', body: JSON.stringify(editForm) })
-      setShowEdit(false)
-      await load()
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setEditSaving(false)
-    }
+    editMutation.mutate(editForm)
   }
 
   function setEditField<K extends keyof CompForm>(k: K, v: CompForm[K]) {
@@ -291,15 +293,15 @@ export default function CompetitionDetail() {
         body: JSON.stringify({ judge_id: selectedJudgeId || null }),
       })
       setShowJudge(false)
-      await load()
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ['competition', id] })
+    } catch {
       // show nothing, just close
     } finally {
       setJudgeSaving(false)
     }
   }
 
-  if (loading) return <div className="p-8 text-gray-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-gray-400">Loading…</div>
   if (!comp) return <div className="p-8 text-gray-400">Competition not found.</div>
 
   const projimTotal = entries.filter(e => e.type === 'projim').reduce((s, e) => s + e.count, 0)
@@ -551,8 +553,8 @@ export default function CompetitionDetail() {
               <button type="button" onClick={() => setShowEdit(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
-              <button type="submit" disabled={editSaving} onClick={handleEditSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
-                {editSaving ? 'Saving…' : 'Save changes'}
+              <button type="submit" disabled={editMutation.isPending} onClick={handleEditSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {editMutation.isPending ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>

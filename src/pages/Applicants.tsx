@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
@@ -36,41 +37,48 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function Applicants() {
-  const [applicants, setApplicants] = useState<Applicant[]>([])
-  const [loading, setLoading] = useState(true)
-  const [working, setWorking] = useState<Record<string, boolean>>({})
+  const queryClient = useQueryClient()
   const [msg, setMsg] = useState<Record<string, { text: string; ok: boolean }>>({})
 
   const [editing, setEditing] = useState<Applicant | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<ApplicantForm>({ first_name: '', last_name: '', email: '', phone: '', annual_sub_amount: '', pay_by_date: '', status: 'pending' })
-  const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  async function load() {
-    const { data } = await supabase
-      .from('applicants')
-      .select('id,first_name,last_name,email,phone,application_date,annual_sub_amount,pay_by_date,status')
-      .order('application_date', { ascending: false })
-    setApplicants(data ?? [])
-    setLoading(false)
-  }
+  const { data: applicants = [], isLoading } = useQuery({
+    queryKey: ['applicants'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('applicants')
+        .select('id,first_name,last_name,email,phone,application_date,annual_sub_amount,pay_by_date,status')
+        .order('application_date', { ascending: false })
+      return data ?? []
+    },
+  })
 
-  useEffect(() => { load() }, [])
-
-  async function recordPayment(id: string) {
-    setWorking(prev => ({ ...prev, [id]: true }))
-    try {
-      await apiFetch(`/api/applicants/${id}/record-payment`, { method: 'POST' })
+  const recordPaymentMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/applicants/${id}/record-payment`, { method: 'POST' }),
+    onSuccess: (_, id) => {
       setMsg(prev => ({ ...prev, [id]: { text: 'Converted to member ✓', ok: true } }))
-      await load()
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ['applicants'] })
+    },
+    onError: (err, id) => {
       const text = err instanceof Error ? err.message : 'Error'
       setMsg(prev => ({ ...prev, [id]: { text, ok: false } }))
-    } finally {
-      setWorking(prev => ({ ...prev, [id]: false }))
-    }
-  }
+    },
+  })
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, form }: { id: string; form: ApplicantForm }) =>
+      apiFetch(`/api/applicants/${id}`, { method: 'PATCH', body: JSON.stringify(form) }),
+    onSuccess: () => {
+      setShowModal(false)
+      queryClient.invalidateQueries({ queryKey: ['applicants'] })
+    },
+    onError: (err) => {
+      setFormError(err instanceof Error ? err.message : 'Something went wrong')
+    },
+  })
 
   function openEdit(a: Applicant) {
     setEditing(a)
@@ -94,17 +102,8 @@ export default function Applicants() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!editing) return
-    setSaving(true)
     setFormError(null)
-    try {
-      await apiFetch(`/api/applicants/${editing.id}`, { method: 'PATCH', body: JSON.stringify(form) })
-      setShowModal(false)
-      await load()
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setSaving(false)
-    }
+    editMutation.mutate({ id: editing.id, form })
   }
 
   function statusBadge(s: string) {
@@ -130,7 +129,7 @@ export default function Applicants() {
         </div>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center text-gray-400 py-8">Loading…</div>
       ) : applicants.length === 0 ? (
         <div className="text-center text-gray-400 py-8">No applicants</div>
@@ -168,11 +167,11 @@ export default function Applicants() {
 
               {a.status === 'pending' && !msg[a.id]?.ok && (
                 <button
-                  onClick={() => recordPayment(a.id)}
-                  disabled={working[a.id]}
+                  onClick={() => recordPaymentMutation.mutate(a.id)}
+                  disabled={recordPaymentMutation.isPending}
                   className="mt-4 w-full py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
                 >
-                  {working[a.id] ? 'Processing…' : 'Record Payment'}
+                  {recordPaymentMutation.isPending ? 'Processing…' : 'Record Payment'}
                 </button>
               )}
             </div>
@@ -237,8 +236,8 @@ export default function Applicants() {
               <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
-              <button type="submit" disabled={saving} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save changes'}
+              <button type="submit" disabled={editMutation.isPending} onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {editMutation.isPending ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>

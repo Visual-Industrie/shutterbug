@@ -63,6 +63,8 @@ app.post('/api/auth/login', async (req, res) => {
     const admin = result.rows[0]
     if (!admin) return void res.status(401).json({ error: 'Invalid credentials' })
 
+    if (!admin.password_hash) return void res.status(401).json({ error: 'Account not yet activated — check your email for a setup link' })
+
     const valid = await bcrypt.compare(password, admin.password_hash)
     if (!valid) return void res.status(401).json({ error: 'Invalid credentials' })
 
@@ -107,6 +109,84 @@ app.post('/api/auth/change-password', async (req, res) => {
     res.json({ ok: true })
   } finally {
     await pool.end()
+  }
+})
+
+app.post('/api/auth/invite', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { member_id, admin_role } = req.body ?? {}
+  if (!member_id) return void res.status(400).json({ error: 'member_id is required' })
+  if (!admin_role) return void res.status(400).json({ error: 'admin_role is required' })
+
+  try {
+    // Look up the member
+    const memberRes = await getPool().query(
+      `SELECT id, first_name, last_name, email FROM members WHERE id = $1`,
+      [member_id],
+    )
+    const member = memberRes.rows[0]
+    if (!member) return void res.status(404).json({ error: 'Member not found' })
+
+    const inviteToken = crypto.randomUUID()
+    const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const name = `${member.first_name} ${member.last_name}`
+
+    // Upsert admin_users row
+    await getPool().query(
+      `INSERT INTO admin_users (email, name, role, member_id, invite_token, invite_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (email) DO UPDATE SET
+         role = EXCLUDED.role,
+         member_id = EXCLUDED.member_id,
+         invite_token = EXCLUDED.invite_token,
+         invite_expires_at = EXCLUDED.invite_expires_at`,
+      [member.email, name, admin_role, member_id, inviteToken, inviteExpiresAt],
+    )
+
+    const appUrl = process.env.APP_URL ?? 'http://localhost:5173'
+    const inviteLink = `${appUrl}/set-password?token=${inviteToken}`
+
+    const { sendEmail } = await import('./_lib/email.js')
+    await sendEmail({
+      type: 'one_off',
+      to: member.email,
+      toName: name,
+      subject: 'Set up your Shutterbug admin account',
+      html: `<p>Hi ${member.first_name},</p>
+<p>You've been granted access to the Shutterbug admin portal.</p>
+<p><a href="${inviteLink}">Click here to set your password</a></p>
+<p>This link expires in 7 days.</p>`,
+      memberId: member_id,
+    })
+
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('POST /api/auth/invite', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/auth/set-password', async (req, res) => {
+  const { token, password } = req.body ?? {}
+  if (!token || !password) return void res.status(400).json({ error: 'token and password are required' })
+  if (password.length < 8) return void res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+  try {
+    const result = await getPool().query(
+      `SELECT id FROM admin_users WHERE invite_token = $1 AND invite_expires_at > NOW()`,
+      [token],
+    )
+    if (!result.rows.length) return void res.status(400).json({ error: 'Invalid or expired invite link' })
+
+    const hash = await bcrypt.hash(password, 12)
+    await getPool().query(
+      `UPDATE admin_users SET password_hash = $1, invite_token = NULL, invite_expires_at = NULL WHERE id = $2`,
+      [hash, result.rows[0].id],
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('POST /api/auth/set-password', err)
+    res.status(500).json({ error: (err as Error).message })
   }
 })
 
@@ -471,10 +551,12 @@ app.get('/api/committee/members', async (req, res) => {
     const result = await getPool().query(`
       SELECT cm.id, cm.starts_at, cm.ends_at, cm.notes, cm.member_id,
              m.first_name, m.last_name, m.email, m.membership_number,
-             r.id AS role_id, r.name AS role_name, r.is_officer, r.sort_order
+             r.id AS role_id, r.name AS role_name, r.is_officer, r.sort_order,
+             (au.id IS NOT NULL) AS has_login
       FROM committee_members cm
       JOIN committee_roles r ON r.id = cm.role_id
       LEFT JOIN members m ON m.id = cm.member_id
+      LEFT JOIN admin_users au ON au.member_id = m.id
       ORDER BY cm.ends_at NULLS FIRST, r.sort_order, m.last_name
     `)
     res.json(result.rows)

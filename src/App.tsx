@@ -27,6 +27,7 @@ import History from '@/pages/History'
 import Join from '@/pages/Join'
 import Profile from '@/pages/Profile'
 import Settings from '@/pages/Settings'
+import SetPassword from '@/pages/SetPassword'
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<Login />} />
           <Route path="/join" element={<Join />} />
+          <Route path="/set-password" element={<SetPassword />} />
 
           {/* Token-based portals (no auth) */}
           <Route path="/submit/:token" element={<Submit />} />

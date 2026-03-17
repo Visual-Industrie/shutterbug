@@ -216,7 +216,10 @@ export const adminUsers = pgTable('admin_users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   role: adminRoleEnum('role').notNull(),
-  passwordHash: text('password_hash').notNull(),
+  passwordHash: text('password_hash'),
+  memberId: uuid('member_id').references(() => members.id),
+  inviteToken: text('invite_token'),
+  inviteExpiresAt: timestamp('invite_expires_at', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

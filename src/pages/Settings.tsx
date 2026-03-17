@@ -37,6 +37,7 @@ interface CommitteeMember {
   starts_at: string
   ends_at: string | null
   notes: string | null
+  has_login: boolean
 }
 
 interface MemberOption {
@@ -150,6 +151,12 @@ export default function Settings() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Grant Login modal
+  const [grantTarget, setGrantTarget] = useState<CommitteeMember | null>(null)
+  const [grantRole, setGrantRole] = useState('committee')
+  const [grantError, setGrantError] = useState<string | null>(null)
+  const [grantSuccess, setGrantSuccess] = useState<string | null>(null)
+
   const { data: committeeData, isLoading: committeeLoading } = useQuery<{ roles: CommitteeRole[]; members: CommitteeMember[] }>({
     queryKey: ['committee'],
     queryFn: async () => {
@@ -203,6 +210,25 @@ export default function Settings() {
     mutationFn: (id: string) => apiFetch(`/api/committee/members/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['committee'] }),
   })
+
+  const grantLoginMutation = useMutation({
+    mutationFn: ({ member_id, admin_role }: { member_id: string; admin_role: string }) =>
+      apiFetch('/api/auth/invite', { method: 'POST', body: JSON.stringify({ member_id, admin_role }) }),
+    onSuccess: (_, vars) => {
+      const target = members.find(m => m.member_id === vars.member_id)
+      setGrantSuccess(`Invite sent to ${target?.email ?? 'member'}`)
+      setGrantTarget(null)
+      queryClient.invalidateQueries({ queryKey: ['committee'] })
+    },
+    onError: (err) => setGrantError(err instanceof Error ? err.message : 'Failed'),
+  })
+
+  function openGrantLogin(m: CommitteeMember) {
+    setGrantTarget(m)
+    setGrantRole('committee')
+    setGrantError(null)
+    setGrantSuccess(null)
+  }
 
   // Guard — must come after all hooks
   if (user?.role !== 'super_admin') return <Navigate to="/" replace />
@@ -428,6 +454,11 @@ export default function Settings() {
                           <td className="py-2.5 pr-4 text-gray-500 whitespace-nowrap">{fmtDate(m.starts_at)}</td>
                           <td className="py-2.5 pr-4 text-gray-400 text-xs max-w-[12rem] truncate">{m.notes ?? ''}</td>
                           <td className="py-2.5 text-right whitespace-nowrap">
+                            {m.member_id && (
+                              m.has_login
+                                ? <span className="text-xs text-green-600 mr-3">✓ Has login</span>
+                                : <button onClick={() => openGrantLogin(m)} className="text-xs text-blue-500 hover:text-blue-700 transition-colors mr-3">Grant Login</button>
+                            )}
                             <button onClick={() => openEdit(m)} className="text-xs text-gray-400 hover:text-amber-700 transition-colors mr-3">Edit</button>
                             <button onClick={() => endToday(m)} className="text-xs text-gray-400 hover:text-orange-600 transition-colors mr-3">End</button>
                             <button onClick={() => deleteMember(m)} className="text-xs text-gray-300 hover:text-red-500 transition-colors">Delete</button>
@@ -555,6 +586,53 @@ export default function Settings() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Grant Login modal ── */}
+      {grantTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setGrantTarget(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Grant admin login</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{memberName(grantTarget)}</p>
+              </div>
+              <button onClick={() => setGrantTarget(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Admin role</label>
+                <select value={grantRole} onChange={e => setGrantRole(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                  <option value="committee">Committee</option>
+                  <option value="competition_secretary">Competition Secretary</option>
+                  <option value="treasurer">Treasurer</option>
+                  <option value="president">President</option>
+                </select>
+              </div>
+              <p className="text-xs text-gray-400">An invite email will be sent to <strong>{grantTarget.email}</strong> with a link to set their password.</p>
+              {grantError && <p className="text-sm text-red-600">{grantError}</p>}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+              <button onClick={() => setGrantTarget(null)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+              <button
+                onClick={() => { if (grantTarget.member_id) { setGrantError(null); grantLoginMutation.mutate({ member_id: grantTarget.member_id, admin_role: grantRole }) } }}
+                disabled={grantLoginMutation.isPending}
+                className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {grantLoginMutation.isPending ? 'Sending…' : 'Send invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Grant Login success toast ── */}
+      {grantSuccess && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-700 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
+          <span>{grantSuccess}</span>
+          <button onClick={() => setGrantSuccess(null)} className="text-white/70 hover:text-white leading-none">&times;</button>
         </div>
       )}
 

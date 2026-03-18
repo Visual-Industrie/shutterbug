@@ -81,44 +81,19 @@ export default function Submit() {
     setUploadMsg(null)
 
     try {
-      // Step 1: get resumable upload URL from Vercel
-      setUploadStatus('Preparing upload…')
-      const sessionRes = await fetch(`/api/submit/${token}/entries/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, title }),
-      })
-      const sessionJson = await sessionRes.json()
-      if (!sessionRes.ok) {
-        setUploadMsg({ text: sessionJson.error ?? 'Upload failed', ok: false })
-        return
-      }
-      const { uploadUrl } = sessionJson as { uploadUrl: string }
-
-      // Step 2: upload directly to Google Drive (Vercel not in the path)
       setUploadStatus('Uploading…')
-      const driveRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file?.type ?? 'image/jpeg' },
-        body: file ?? undefined,
-      })
-      if (!driveRes.ok) {
-        setUploadMsg({ text: 'Upload to Drive failed', ok: false })
-        return
-      }
-      const driveJson = await driveRes.json()
-      const driveFileId: string = driveJson.id
+      const formData = new FormData()
+      formData.append('type', type)
+      formData.append('title', title)
+      if (file) formData.append('file', file)
 
-      // Step 3: process + finalize via Vercel
-      setUploadStatus('Processing…')
-      const finalRes = await fetch(`/api/submit/${token}/entries/finalize`, {
+      const res = await fetch(`/api/submit/${token}/entries`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ driveFileId, type, title }),
+        body: formData,
       })
-      const finalJson = await finalRes.json()
-      if (!finalRes.ok) {
-        setUploadMsg({ text: finalJson.error ?? 'Processing failed', ok: false })
+      const json = await res.json()
+      if (!res.ok) {
+        setUploadMsg({ text: json.error ?? 'Upload failed', ok: false })
         return
       }
 

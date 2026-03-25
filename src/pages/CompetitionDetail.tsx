@@ -162,6 +162,11 @@ export default function CompetitionDetail() {
     queryFn: () => apiFetch<AdminEntry[]>(`/api/competitions/${id}/entries`),
   })
 
+  const { data: judgingTokenData } = useQuery({
+    queryKey: ['competition-judging-token', id],
+    queryFn: () => apiFetch<{ token: string }>(`/api/competitions/${id}/judging-token`).catch(() => null),
+  })
+
   const { data, isLoading } = useQuery({
     queryKey: ['competition', id],
     queryFn: async () => {
@@ -595,6 +600,14 @@ export default function CompetitionDetail() {
               </div>
             ) : (
               <div className="text-xs text-red-500">No judge assigned</div>
+            )}
+            {judgingTokenData?.token && (
+              <Link
+                to={`/judge/${judgingTokenData.token}/reference`}
+                className="mt-3 block text-center text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-amber-700 hover:border-amber-300 transition-colors"
+              >
+                Open reference view →
+              </Link>
             )}
           </div>
 

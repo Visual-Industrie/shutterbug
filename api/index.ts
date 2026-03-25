@@ -370,6 +370,20 @@ app.post('/api/competitions/:id/send-results', async (req, res) => {
   catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
 })
 
+app.get('/api/competitions/:id/judging-token', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try {
+    const result = await getPool().query(
+      `SELECT t.token FROM tokens t WHERE t.competition_id = $1 AND t.token_type = 'judging' AND t.revoked_at IS NULL LIMIT 1`,
+      [req.params.id],
+    )
+    if (!result.rows[0]) return void res.status(404).json({ error: 'No judging token found' })
+    res.json({ token: result.rows[0].token })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 app.post('/api/competitions/:id/send-judging-invite', async (req, res) => {
   if (!requireAuth(req, res)) return
   try { res.json(await sendJudgingInvite(req.params.id)) }

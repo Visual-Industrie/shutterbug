@@ -159,8 +159,6 @@ export async function sendDeadlineReminders(competitionId: string): Promise<{
       const projimCount = entries.filter(e => e.type === 'projim').length
       const printimCount = entries.filter(e => e.type === 'printim').length
       const totalCount = entries.length
-      const maxTotal = comp.max_projim_entries + comp.max_printim_entries
-
       let status: 'none' | 'partial' | 'full'
       if (totalCount === 0) status = 'none'
       else if (projimCount >= comp.max_projim_entries && printimCount >= comp.max_printim_entries) status = 'full'

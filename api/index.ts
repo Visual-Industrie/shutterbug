@@ -406,7 +406,8 @@ app.get('/api/competitions/:id/entries', async (req, res) => {
 app.post('/api/competitions/:id/entries', async (req, res) => {
   if (!requireAuth(req, res)) return
   const { fields, file } = await parseUpload(req)
-  const { memberId, type, title } = fields
+  const { memberId, title } = fields
+  const type = fields.type as 'projim' | 'printim'
   if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
   if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
   if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })

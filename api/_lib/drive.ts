@@ -89,6 +89,8 @@ export async function processDriveFile(opts: {
   driveFileId: string
   filename: string
   processedBuffer: Buffer
+  thumbnailBuffer?: Buffer
+  competitionFolderId?: string
 }): Promise<{ driveFileUrl: string; driveThumbnailUrl: string }> {
   const auth = getAuth()
   if (!auth) throw new Error('Drive not configured')
@@ -100,7 +102,7 @@ export async function processDriveFile(opts: {
     fileId: opts.driveFileId,
     requestBody: { name: opts.filename },
     media: { mimeType: 'image/jpeg', body: stream },
-    fields: 'id,webViewLink',
+    fields: 'id,webViewLink,parents',
     supportsAllDrives: true,
   })
 
@@ -110,9 +112,35 @@ export async function processDriveFile(opts: {
     supportsAllDrives: true,
   })
 
+  let driveThumbnailUrl = `https://drive.google.com/thumbnail?id=${opts.driveFileId}&sz=w400`
+  if (opts.thumbnailBuffer) {
+    try {
+      const parentId = opts.competitionFolderId ?? updated.data.parents?.[0]
+      if (parentId) {
+        const thumbFolderId = await ensureFolder(drive, 'thumbnails', parentId)
+        const thumbStream = Readable.from(opts.thumbnailBuffer)
+        const thumbUploaded = await drive.files.create({
+          requestBody: { name: opts.filename, parents: [thumbFolderId] },
+          media: { mimeType: 'image/jpeg', body: thumbStream },
+          fields: 'id',
+          supportsAllDrives: true,
+        })
+        const thumbId = thumbUploaded.data.id!
+        await drive.permissions.create({
+          fileId: thumbId,
+          requestBody: { role: 'reader', type: 'anyone' },
+          supportsAllDrives: true,
+        })
+        driveThumbnailUrl = `https://drive.google.com/thumbnail?id=${thumbId}&sz=w600`
+      }
+    } catch (err) {
+      console.warn('[Drive] Thumbnail upload failed, falling back to full-res thumbnail URL', err)
+    }
+  }
+
   return {
     driveFileUrl: updated.data.webViewLink ?? `https://drive.google.com/file/d/${opts.driveFileId}/view`,
-    driveThumbnailUrl: `https://drive.google.com/thumbnail?id=${opts.driveFileId}&sz=w400`,
+    driveThumbnailUrl,
   }
 }
 
@@ -134,6 +162,7 @@ export async function downloadFromDrive(driveFileId: string): Promise<Buffer> {
 
 export async function uploadToDrive(opts: {
   buffer: Buffer
+  thumbnailBuffer?: Buffer
   filename: string
   mimeType: string
   competitionId: string
@@ -149,16 +178,13 @@ export async function uploadToDrive(opts: {
   const drive = google.drive({ version: 'v3', auth })
   const folderId = await ensureFolderPath(drive, opts.competitionName, opts.judgingClosesAt)
 
-  // Upload the file
+  // Upload the full-res file
   const stream = new Readable()
   stream.push(opts.buffer)
   stream.push(null)
 
   const uploaded = await drive.files.create({
-    requestBody: {
-      name: opts.filename,
-      parents: [folderId],
-    },
+    requestBody: { name: opts.filename, parents: [folderId] },
     media: { mimeType: opts.mimeType, body: stream },
     fields: 'id,webViewLink',
     supportsAllDrives: true,
@@ -166,17 +192,42 @@ export async function uploadToDrive(opts: {
 
   const fileId = uploaded.data.id!
 
-  // Make it readable by anyone with the link
   await drive.permissions.create({
     fileId,
     requestBody: { role: 'reader', type: 'anyone' },
     supportsAllDrives: true,
   })
 
+  // Upload thumbnail to thumbnails/ subfolder
+  let driveThumbnailUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`
+  if (opts.thumbnailBuffer) {
+    try {
+      const thumbFolderId = await ensureFolder(drive, 'thumbnails', folderId)
+      const thumbStream = new Readable()
+      thumbStream.push(opts.thumbnailBuffer)
+      thumbStream.push(null)
+      const thumbUploaded = await drive.files.create({
+        requestBody: { name: opts.filename, parents: [thumbFolderId] },
+        media: { mimeType: 'image/jpeg', body: thumbStream },
+        fields: 'id,webViewLink',
+        supportsAllDrives: true,
+      })
+      const thumbId = thumbUploaded.data.id!
+      await drive.permissions.create({
+        fileId: thumbId,
+        requestBody: { role: 'reader', type: 'anyone' },
+        supportsAllDrives: true,
+      })
+      driveThumbnailUrl = `https://drive.google.com/thumbnail?id=${thumbId}&sz=w600`
+    } catch (err) {
+      console.warn('[Drive] Thumbnail upload failed, falling back to full-res thumbnail URL', err)
+    }
+  }
+
   return {
     driveFileId: fileId,
     driveFileUrl: uploaded.data.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view`,
-    driveThumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`,
+    driveThumbnailUrl,
   }
 }
 

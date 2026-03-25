@@ -25,7 +25,7 @@ import { getMemberHistory } from './_lib/history.js'
 import archiver from 'archiver'
 import { uploadToDrive, deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDriveFile } from './_lib/drive.js'
 import { parseUpload } from './_lib/parse-upload.js'
-import { processImage, buildEntryFilename } from './_lib/image.js'
+import { processImage, generateThumbnail, buildEntryFilename } from './_lib/image.js'
 import { getPool } from './_lib/db.js'
 
 const app = express()
@@ -460,6 +460,7 @@ app.post('/api/competitions/:id/entries', async (req, res) => {
   if (file && file.buffer.length > 0) {
     try {
       const processedBuffer = await processImage(file.buffer)
+      const thumbnailBuffer = await generateThumbnail(processedBuffer)
       const filename = buildEntryFilename({
         type,
         title,
@@ -468,6 +469,7 @@ app.post('/api/competitions/:id/entries', async (req, res) => {
       })
       driveResult = await uploadToDrive({
         buffer: processedBuffer,
+        thumbnailBuffer,
         filename,
         mimeType: 'image/jpeg',
         competitionId: comp.id,
@@ -1025,6 +1027,7 @@ app.post('/api/submit/:token/entries', async (req, res) => {
     const comp = compRes.rows[0]
     if (comp) {
       const processedBuffer = await processImage(file.buffer)
+      const thumbnailBuffer = await generateThumbnail(processedBuffer)
       const filename = buildEntryFilename({
         type,
         title,
@@ -1033,6 +1036,7 @@ app.post('/api/submit/:token/entries', async (req, res) => {
       })
       driveResult = await uploadToDrive({
         buffer: processedBuffer,
+        thumbnailBuffer,
         filename,
         mimeType: 'image/jpeg',
         competitionId: comp.id,
@@ -1123,13 +1127,14 @@ app.post('/api/submit/:token/entries/finalize', async (req, res) => {
   try {
     const rawBuffer = await downloadFromDrive(driveFileId)
     const processedBuffer = await processImage(rawBuffer)
+    const thumbnailBuffer = await generateThumbnail(processedBuffer)
     const filename = buildEntryFilename({
       type,
       title,
       membershipNumber: comp.membership_number,
       originalFilename: 'upload.jpg',
     })
-    const { driveFileUrl, driveThumbnailUrl } = await processDriveFile({ driveFileId, filename, processedBuffer })
+    const { driveFileUrl, driveThumbnailUrl } = await processDriveFile({ driveFileId, filename, processedBuffer, thumbnailBuffer })
 
     const result = await createEntry({
       tokenValue: req.params.token,

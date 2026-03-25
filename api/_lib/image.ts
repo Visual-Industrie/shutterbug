@@ -2,6 +2,7 @@ import sharp from 'sharp'
 import * as path from 'path'
 
 const MAX_LONG_EDGE = 1920
+const THUMBNAIL_LONG_EDGE = 500
 
 /**
  * Processes an uploaded image:
@@ -13,7 +14,18 @@ export async function processImage(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer)
     .resize(MAX_LONG_EDGE, MAX_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 90 })
-    .withMetadata({}) // passing empty object strips all metadata
+    .withMetadata({})
+    .toBuffer()
+}
+
+/**
+ * Generates a thumbnail from an already-processed image buffer.
+ * Longest edge 500px, JPEG quality 80.
+ */
+export async function generateThumbnail(buffer: Buffer): Promise<Buffer> {
+  return sharp(buffer)
+    .resize(THUMBNAIL_LONG_EDGE, THUMBNAIL_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 80 })
     .toBuffer()
 }
 

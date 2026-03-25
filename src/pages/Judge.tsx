@@ -169,8 +169,8 @@ function EntryCard({
           <img
             src={entry.driveThumbnailUrl}
             alt={entry.title}
-            onClick={() => entry.driveFileId && onImageClick(`/api/drive/image/${entry.driveFileId}`, entry.title)}
-            className={`w-full h-48 object-cover rounded-t-xl ${entry.driveFileId ? 'cursor-zoom-in' : ''}`}
+            onClick={() => entry.driveFileUrl && onImageClick(entry.driveFileUrl, entry.title)}
+            className={`w-full h-48 object-cover rounded-t-xl ${entry.driveFileUrl ? 'cursor-zoom-in' : ''}`}
           />
         ) : (
           <div className="w-full h-48 bg-gray-100 rounded-t-xl flex items-center justify-center text-gray-300 text-4xl">

@@ -112,7 +112,7 @@ export async function processDriveFile(opts: {
     fileId: opts.driveFileId,
     requestBody: { name: opts.filename },
     media: { mimeType: 'image/jpeg', body: stream },
-    fields: 'id,webViewLink,parents',
+    fields: 'id,parents',
     supportsAllDrives: true,
   })
 
@@ -149,7 +149,7 @@ export async function processDriveFile(opts: {
   }
 
   return {
-    driveFileUrl: updated.data.webViewLink ?? `https://drive.google.com/file/d/${opts.driveFileId}/view`,
+    driveFileUrl: `https://drive.google.com/uc?export=view&id=${opts.driveFileId}`,
     driveThumbnailUrl,
   }
 }
@@ -196,7 +196,7 @@ export async function uploadToDrive(opts: {
   const uploaded = await drive.files.create({
     requestBody: { name: opts.filename, parents: [folderId] },
     media: { mimeType: opts.mimeType, body: stream },
-    fields: 'id,webViewLink',
+    fields: 'id',
     supportsAllDrives: true,
   })
 
@@ -236,7 +236,7 @@ export async function uploadToDrive(opts: {
 
   return {
     driveFileId: fileId,
-    driveFileUrl: uploaded.data.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view`,
+    driveFileUrl: `https://drive.google.com/uc?export=view&id=${fileId}`,
     driveThumbnailUrl,
   }
 }

@@ -16,6 +16,7 @@ import {
   sendJudgingInvite,
   sendMemberHistoryLink,
   sendResults,
+  sendDeadlineReminders,
 } from './_lib/competition-actions.js'
 import { sendEmail, subsReminderEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
@@ -375,6 +376,133 @@ app.post('/api/competitions/:id/send-judging-invite', async (req, res) => {
   catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
 })
 
+app.post('/api/competitions/:id/send-deadline-reminders', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try { res.json(await sendDeadlineReminders(req.params.id)) }
+  catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
+})
+
+// ── Admin entry management ────────────────────────────────────────────────────
+
+app.get('/api/competitions/:id/entries', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try {
+    const result = await getPool().query(
+      `SELECT e.id, e.type, e.title, e.drive_file_url, e.drive_thumbnail_url,
+              e.award, e.submitted_at, e.sort_order,
+              m.id AS member_id, m.first_name, m.last_name, m.membership_number
+       FROM entries e
+       JOIN members m ON m.id = e.member_id
+       WHERE e.competition_id = $1
+       ORDER BY COALESCE(e.sort_order, 999999), e.type, e.submitted_at`,
+      [req.params.id],
+    )
+    res.json(result.rows)
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/competitions/:id/entries', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { fields, file } = await parseUpload(req)
+  const { memberId, type, title } = fields
+  if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
+  if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
+
+  const pool = getPool()
+
+  // Validate competition + member exist
+  const compRes = await pool.query(
+    `SELECT id, name, status, max_projim_entries, max_printim_entries, judging_closes_at FROM competitions WHERE id = $1`,
+    [req.params.id],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+  const memberRes = await pool.query(
+    `SELECT id, membership_number FROM members WHERE id = $1`,
+    [memberId],
+  )
+  if (!memberRes.rows[0]) return void res.status(404).json({ error: 'Member not found' })
+  const member = memberRes.rows[0]
+
+  // Enforce entry limits
+  const countRes = await pool.query(
+    `SELECT type, COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2 GROUP BY type`,
+    [req.params.id, memberId],
+  )
+  const counts = Object.fromEntries(countRes.rows.map((r: { type: string; cnt: string }) => [r.type, parseInt(r.cnt, 10)]))
+  if (type === 'projim' && (counts.projim ?? 0) >= comp.max_projim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_projim_entries} PROJIM entry` })
+  }
+  if (type === 'printim' && (counts.printim ?? 0) >= comp.max_printim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_printim_entries} PRINTIM entries` })
+  }
+
+  let driveResult = null
+  if (file && file.buffer.length > 0) {
+    try {
+      const processedBuffer = await processImage(file.buffer)
+      const filename = buildEntryFilename({
+        type,
+        title,
+        membershipNumber: member.membership_number,
+        originalFilename: file.filename || `${title}.jpg`,
+      })
+      driveResult = await uploadToDrive({
+        buffer: processedBuffer,
+        filename,
+        mimeType: 'image/jpeg',
+        competitionId: comp.id,
+        competitionName: comp.name,
+        judgingClosesAt: comp.judging_closes_at,
+      })
+    } catch (err) {
+      console.error('Admin entry drive upload failed', err)
+    }
+  }
+
+  const insertRes = await pool.query(
+    `INSERT INTO entries (competition_id, member_id, type, title, drive_file_id, drive_file_url, drive_thumbnail_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [req.params.id, memberId, type, title.trim(),
+     driveResult?.driveFileId ?? null,
+     driveResult?.driveFileUrl ?? null,
+     driveResult?.driveThumbnailUrl ?? null],
+  )
+  res.status(201).json({ id: insertRes.rows[0].id })
+})
+
+app.patch('/api/competitions/:id/entries/:entryId', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { title, type } = req.body ?? {}
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
+  const result = await getPool().query(
+    `UPDATE entries SET title = $1, type = $2, updated_at = NOW() WHERE id = $3 AND competition_id = $4 RETURNING id`,
+    [title.trim(), type, req.params.entryId, req.params.id],
+  )
+  if (!result.rows.length) return void res.status(404).json({ error: 'Entry not found' })
+  res.json({ ok: true })
+})
+
+app.delete('/api/competitions/:id/entries/:entryId', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try {
+    const result = await getPool().query(
+      `DELETE FROM entries WHERE id = $1 AND competition_id = $2 RETURNING drive_file_id`,
+      [req.params.entryId, req.params.id],
+    )
+    if (!result.rows.length) return void res.status(404).json({ error: 'Entry not found' })
+    const driveFileId = result.rows[0].drive_file_id
+    if (driveFileId) await deleteFromDrive(driveFileId)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // ── Bulk entry download ───────────────────────────────────────────────────────
 
 app.get('/api/competitions/:id/download-entries', async (req, res) => {
@@ -389,8 +517,8 @@ app.get('/api/competitions/:id/download-entries', async (req, res) => {
 
     const entriesRes = await getPool().query(
       typeFilter && typeFilter !== 'all'
-        ? `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL AND type = $2 ORDER BY type, title`
-        : `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL ORDER BY type, title`,
+        ? `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL AND type = $2 ORDER BY COALESCE(sort_order, 999999), type, title`
+        : `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL ORDER BY COALESCE(sort_order, 999999), type, title`,
       typeFilter && typeFilter !== 'all' ? [id, typeFilter] : [id],
     )
     if (!entriesRes.rows.length) return void res.status(404).json({ error: 'No entries with images found' })
@@ -560,6 +688,53 @@ app.post('/api/members/:id/send-history-link', async (req, res) => {
   if (!requireAuth(req, res)) return
   try { await sendMemberHistoryLink(req.params.id); res.json({ ok: true }) }
   catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
+})
+
+app.get('/api/members/:id/payments', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try {
+    const result = await getPool().query(
+      `SELECT p.id, p.year, p.amount, p.payment_date, p.notes, p.created_at,
+              a.name AS recorded_by_name
+       FROM payments p
+       LEFT JOIN admin_users a ON a.id = p.recorded_by
+       WHERE p.member_id = $1
+       ORDER BY p.year DESC, p.payment_date DESC`,
+      [req.params.id],
+    )
+    res.json(result.rows)
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/members/:id/payments', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const auth = req.headers.authorization!
+  const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { sub: string; role: string }
+  const allowedRoles = ['super_admin', 'president', 'treasurer', 'competition_secretary']
+  if (!allowedRoles.includes(payload.role)) {
+    return void res.status(403).json({ error: 'Insufficient permissions to record payments' })
+  }
+
+  const { year, amount, payment_date, notes } = req.body ?? {}
+  if (!year) return void res.status(400).json({ error: 'year is required' })
+
+  try {
+    const result = await getPool().query(
+      `INSERT INTO payments (member_id, year, amount, payment_date, notes, recorded_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [req.params.id, year, amount || null, payment_date || null, notes?.trim() || null, payload.sub],
+    )
+    // Also flip subs_paid = true on the member record
+    await getPool().query(
+      `UPDATE members SET subs_paid = true, subs_paid_date = $1, updated_at = NOW() WHERE id = $2`,
+      [payment_date || null, req.params.id],
+    )
+    res.status(201).json({ id: result.rows[0].id })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 // ── Judge routes ─────────────────────────────────────────────────────────────
@@ -985,6 +1160,78 @@ app.post('/api/judge/:token/complete', async (req, res) => {
   const result = await completeJudging(req.params.token)
   if ('error' in result) return void res.status(400).json(result)
   res.json(result)
+})
+
+app.get('/api/judge/:token/reference', async (req, res) => {
+  const pool = getPool()
+  const tokRes = await pool.query(
+    `SELECT t.judge_id, t.competition_id
+     FROM tokens t
+     WHERE t.token = $1 AND t.type = 'judging' AND t.revoked_at IS NULL AND t.expires_at > NOW()`,
+    [req.params.token],
+  )
+  const tok = tokRes.rows[0]
+  if (!tok) return void res.status(404).json({ error: 'Invalid or expired judging link' })
+
+  const compRes = await pool.query(
+    `SELECT id, name, status, judging_opens_at FROM competitions WHERE id = $1`,
+    [tok.competition_id],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+  const entriesRes = await pool.query(
+    `SELECT e.id, e.type, e.title, e.drive_file_url, e.drive_thumbnail_url, e.sort_order,
+            e.award, e.judge_comment, e.judged_at,
+            m.first_name, m.last_name, m.membership_number
+     FROM entries e
+     JOIN members m ON m.id = e.member_id
+     WHERE e.competition_id = $1
+     ORDER BY COALESCE(e.sort_order, 999999), e.type, e.submitted_at`,
+    [tok.competition_id],
+  )
+
+  // Reorder is locked after judging_opens_at (if set)
+  const reorderLocked = comp.judging_opens_at ? new Date(comp.judging_opens_at) <= new Date() : false
+
+  res.json({
+    competition: { id: comp.id, name: comp.name, status: comp.status, judgingOpensAt: comp.judging_opens_at },
+    entries: entriesRes.rows,
+    reorderLocked,
+  })
+})
+
+app.patch('/api/judge/:token/reorder', async (req, res) => {
+  const pool = getPool()
+  const tokRes = await pool.query(
+    `SELECT t.competition_id, c.judging_opens_at
+     FROM tokens t
+     JOIN competitions c ON c.id = t.competition_id
+     WHERE t.token = $1 AND t.type = 'judging' AND t.revoked_at IS NULL AND t.expires_at > NOW()`,
+    [req.params.token],
+  )
+  const tok = tokRes.rows[0]
+  if (!tok) return void res.status(404).json({ error: 'Invalid or expired judging link' })
+
+  // Check reorder is not locked
+  if (tok.judging_opens_at && new Date(tok.judging_opens_at) <= new Date()) {
+    return void res.status(400).json({ error: 'Entry order is locked — judging has opened' })
+  }
+
+  const { entries } = req.body ?? {}
+  if (!Array.isArray(entries)) return void res.status(400).json({ error: 'entries array required' })
+
+  try {
+    for (const { id, sort_order } of entries) {
+      await pool.query(
+        `UPDATE entries SET sort_order = $1 WHERE id = $2 AND competition_id = $3`,
+        [sort_order, id, tok.competition_id],
+      )
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
 })
 
 // ── Member history portal (public, token-gated) ───────────────────────────────

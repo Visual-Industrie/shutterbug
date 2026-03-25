@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -42,6 +42,20 @@ interface EntrySummary {
   type: string
   award: string | null
   count: number
+}
+
+interface AdminEntry {
+  id: string
+  type: string
+  title: string
+  drive_file_url: string | null
+  drive_thumbnail_url: string | null
+  award: string | null
+  submitted_at: string
+  member_id: string
+  first_name: string
+  last_name: string
+  membership_number: string | null
 }
 
 interface JudgeOption {
@@ -129,6 +143,24 @@ export default function CompetitionDetail() {
   const [selectedJudgeId, setSelectedJudgeId] = useState('')
   const [judgeSearch, setJudgeSearch] = useState('')
   const [judgeSaving, setJudgeSaving] = useState(false)
+
+  // Manual entry modal
+  const [showAddEntry, setShowAddEntry] = useState(false)
+  const [editingEntry, setEditingEntry] = useState<AdminEntry | null>(null)
+  const [entryMemberOptions, setEntryMemberOptions] = useState<{ id: string; first_name: string; last_name: string; membership_number: string | null }[]>([])
+  const [entryMemberSearch, setEntryMemberSearch] = useState('')
+  const [entryMemberId, setEntryMemberId] = useState('')
+  const [entryType, setEntryType] = useState<'projim' | 'printim'>('projim')
+  const [entryTitle, setEntryTitle] = useState('')
+  const [entryFile, setEntryFile] = useState<File | null>(null)
+  const [entryUploading, setEntryUploading] = useState(false)
+  const [entryError, setEntryError] = useState<string | null>(null)
+  const entryFileRef = useRef<HTMLInputElement>(null)
+
+  const { data: adminEntries = [], refetch: refetchEntries } = useQuery({
+    queryKey: ['competition-entries', id],
+    queryFn: () => apiFetch<AdminEntry[]>(`/api/competitions/${id}/entries`),
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['competition', id],
@@ -329,6 +361,85 @@ export default function CompetitionDetail() {
     }
   }
 
+  async function openAddEntry() {
+    const { data } = await supabase
+      .from('members')
+      .select('id, first_name, last_name, membership_number')
+      .eq('status', 'active')
+      .order('last_name')
+    setEntryMemberOptions((data ?? []) as typeof entryMemberOptions)
+    setEditingEntry(null)
+    setEntryMemberId('')
+    setEntryMemberSearch('')
+    setEntryType('projim')
+    setEntryTitle('')
+    setEntryFile(null)
+    setEntryError(null)
+    setShowAddEntry(true)
+  }
+
+  function openEditEntry(entry: AdminEntry) {
+    setEditingEntry(entry)
+    setEntryMemberId(entry.member_id)
+    setEntryType(entry.type as 'projim' | 'printim')
+    setEntryTitle(entry.title)
+    setEntryFile(null)
+    setEntryError(null)
+    setShowAddEntry(true)
+  }
+
+  async function handleEntrySubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setEntryError(null)
+    if (!editingEntry && !entryMemberId) { setEntryError('Please select a member'); return }
+    if (!entryTitle.trim()) { setEntryError('Title is required'); return }
+
+    setEntryUploading(true)
+    try {
+      if (editingEntry) {
+        await apiFetch(`/api/competitions/${id}/entries/${editingEntry.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: entryTitle, type: entryType }),
+        })
+      } else {
+        const formData = new FormData()
+        formData.append('memberId', entryMemberId)
+        formData.append('type', entryType)
+        formData.append('title', entryTitle)
+        if (entryFile) formData.append('file', entryFile)
+
+        const token = localStorage.getItem('sb_admin_token')
+        const res = await fetch(`/api/competitions/${id}/entries`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        })
+        if (!res.ok) {
+          const j = await res.json()
+          throw new Error(j.error ?? 'Failed to add entry')
+        }
+      }
+      setShowAddEntry(false)
+      refetchEntries()
+      queryClient.invalidateQueries({ queryKey: ['competition', id] })
+    } catch (err) {
+      setEntryError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setEntryUploading(false)
+    }
+  }
+
+  async function handleDeleteEntry(entryId: string, memberName: string) {
+    if (!confirm(`Remove entry by ${memberName}? This will also delete the image from Drive.`)) return
+    try {
+      await apiFetch(`/api/competitions/${id}/entries/${entryId}`, { method: 'DELETE' })
+      refetchEntries()
+      queryClient.invalidateQueries({ queryKey: ['competition', id] })
+    } catch (err) {
+      setActionMsg({ text: `Delete failed: ${err instanceof Error ? err.message : 'Error'}`, ok: false })
+    }
+  }
+
   if (isLoading) return <div className="p-8 text-gray-400">Loading…</div>
   if (!comp) return <div className="p-8 text-gray-400">Competition not found.</div>
 
@@ -394,7 +505,15 @@ export default function CompetitionDetail() {
 
           {/* Entries summary */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Entries</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-700">Entries</h2>
+              <button
+                onClick={openAddEntry}
+                className="text-xs px-2.5 py-1 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+              >
+                + Add manually
+              </button>
+            </div>
             <div className="flex gap-6 mb-3">
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-900">{projimTotal}</div>
@@ -409,9 +528,39 @@ export default function CompetitionDetail() {
                 <div className="text-xs text-gray-400 mt-0.5">Total</div>
               </div>
             </div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-gray-400 mb-3">
               Limits: {comp.max_projim_entries} PROJIM · {comp.max_printim_entries} PRINTIM per member
             </div>
+            {/* Entry list */}
+            {adminEntries.length > 0 && (
+              <div className="space-y-1 max-h-64 overflow-y-auto border-t border-gray-100 pt-3">
+                {adminEntries.map(entry => (
+                  <div key={entry.id} className="flex items-center gap-2 text-xs">
+                    {entry.drive_thumbnail_url ? (
+                      <img src={entry.drive_thumbnail_url} alt="" className="w-8 h-8 rounded object-cover shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-gray-100 shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 truncate">{entry.title}</div>
+                      <div className="text-gray-400">{entry.first_name} {entry.last_name} · {entry.type.toUpperCase()}</div>
+                    </div>
+                    <button
+                      onClick={() => openEditEntry(entry)}
+                      className="text-gray-400 hover:text-amber-700 transition-colors shrink-0"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEntry(entry.id, `${entry.first_name} ${entry.last_name}`)}
+                      className="text-gray-400 hover:text-red-600 transition-colors shrink-0"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Points config */}
@@ -495,6 +644,12 @@ export default function CompetitionDetail() {
                 <ActionButton
                   label="Send reminders"
                   onClick={() => doAction(`/api/competitions/${comp.id}/send-submission-reminders`, 'Reminders')}
+                  variant="secondary"
+                  disabled={working}
+                />
+                <ActionButton
+                  label="Send personalised reminders"
+                  onClick={() => doAction(`/api/competitions/${comp.id}/send-deadline-reminders`, 'Deadline reminders')}
                   variant="secondary"
                   disabled={working}
                 />
@@ -650,6 +805,122 @@ export default function CompetitionDetail() {
               </button>
               <button onClick={handleSingleInvite} disabled={!selectedMemberId || singleInviteSending} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
                 {singleInviteSending ? 'Sending…' : 'Send invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Entry Modal */}
+      {showAddEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowAddEntry(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">{editingEntry ? 'Edit entry' : 'Add entry manually'}</h2>
+              <button onClick={() => setShowAddEntry(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <form onSubmit={handleEntrySubmit} className="p-4 space-y-4">
+              {/* Member selector — only for new entries */}
+              {!editingEntry && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Member *</label>
+                  <input
+                    type="search"
+                    placeholder="Search members…"
+                    value={entryMemberSearch}
+                    onChange={e => setEntryMemberSearch(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <div className="max-h-40 overflow-y-auto space-y-0.5 border border-gray-200 rounded-lg">
+                    {entryMemberOptions
+                      .filter(m => !entryMemberSearch || `${m.first_name} ${m.last_name} ${m.membership_number ?? ''}`.toLowerCase().includes(entryMemberSearch.toLowerCase()))
+                      .map(m => (
+                        <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="entryMember"
+                            value={m.id}
+                            checked={entryMemberId === m.id}
+                            onChange={() => setEntryMemberId(m.id)}
+                            className="accent-amber-600"
+                          />
+                          <span className="text-sm text-gray-900">{m.first_name} {m.last_name}</span>
+                          {m.membership_number && <span className="text-xs text-gray-400">#{m.membership_number}</span>}
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {editingEntry && (
+                <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-lg">
+                  {editingEntry.first_name} {editingEntry.last_name}
+                  {editingEntry.membership_number && <span className="text-gray-400 ml-1">#{editingEntry.membership_number}</span>}
+                </div>
+              )}
+
+              {/* Entry type */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Type</label>
+                <div className="flex gap-2">
+                  {(['projim', 'printim'] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setEntryType(t)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        entryType === t
+                          ? 'bg-amber-600 text-white border-amber-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={entryTitle}
+                  onChange={e => setEntryTitle(e.target.value)}
+                  placeholder="e.g. Golden Hour at the Wharf"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* File upload (new entries only) */}
+              {!editingEntry && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Image file <span className="text-gray-400">(optional — JPEG or PNG)</span>
+                  </label>
+                  <input
+                    ref={entryFileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/jpg"
+                    onChange={e => setEntryFile(e.target.files?.[0] ?? null)}
+                    className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100"
+                  />
+                </div>
+              )}
+
+              {entryError && (
+                <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{entryError}</div>
+              )}
+            </form>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex gap-3">
+              <button type="button" onClick={() => setShowAddEntry(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleEntrySubmit} disabled={entryUploading} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
+                {entryUploading ? 'Saving…' : editingEntry ? 'Save changes' : 'Add entry'}
               </button>
             </div>
           </div>

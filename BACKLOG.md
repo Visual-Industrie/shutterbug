@@ -4,8 +4,6 @@ Everything still to be built. See `completed.md` for what's already done.
 
 ---
 
----
-
 ## Medium Priority
 
 ### Season Management
@@ -65,8 +63,6 @@ Several stats from the spec are not yet displayed on the dashboard:
 - Full event schedule (upcoming competitions with status, judge, entry counts)
 
 ### Email Log Improvements
-- Audit and consistently populate the `body` column on `email_log`
-- Expandable body preview in the Email Log UI
 - Filter by email type, date range, member
 
 ---

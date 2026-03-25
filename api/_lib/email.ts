@@ -273,6 +273,83 @@ ${urgency}
   return { subject, html }
 }
 
+export async function deadlineReminderEmail(opts: {
+  memberName: string
+  competitionName: string
+  closesAt: string | null
+  token: string
+  status: 'none' | 'partial' | 'full'
+  projimCount: number
+  printimCount: number
+  maxProjim: number
+  maxPrintim: number
+  entries: Array<{ title: string; type: string }>
+}): Promise<{ subject: string; html: string }> {
+  const link = `${appUrl}/submit/${opts.token}`
+  const closes = opts.closesAt
+    ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'soon'
+
+  let templateKey: string
+  let defaultSubject: string
+  let defaultIntro: string
+
+  if (opts.status === 'none') {
+    templateKey = 'deadline_reminder_none'
+    defaultSubject = `Don't forget to enter – ${opts.competitionName}`
+    defaultIntro = `<p>We noticed you haven't submitted any entries yet for <strong>${opts.competitionName}</strong>. There's still time!</p>`
+  } else if (opts.status === 'partial') {
+    templateKey = 'deadline_reminder_partial'
+    defaultSubject = `You still have entry slots available – ${opts.competitionName}`
+    const submittedList = opts.entries.map(e => `<li>${e.title} (${e.type.toUpperCase()})</li>`).join('')
+    const remaining: string[] = []
+    const projimLeft = opts.maxProjim - opts.projimCount
+    const printimLeft = opts.maxPrintim - opts.printimCount
+    if (projimLeft > 0) remaining.push(`${projimLeft} PROJIM`)
+    if (printimLeft > 0) remaining.push(`${printimLeft} PRINTIM`)
+    defaultIntro = `<p>You've submitted the following entries for <strong>${opts.competitionName}</strong>:</p>
+<ul>${submittedList}</ul>
+<p>You still have <strong>${remaining.join(' and ')}</strong> slot${remaining.length > 1 ? 's' : ''} remaining. Why not make the most of it?</p>`
+  } else {
+    templateKey = 'deadline_reminder_full'
+    defaultSubject = `Final check – ${opts.competitionName} closes ${closes}`
+    defaultIntro = `<p>You've submitted the maximum number of entries for <strong>${opts.competitionName}</strong> — great work!</p>
+<p>Please take a moment to review your entries before the deadline.</p>`
+  }
+
+  const tmpl = await getEmailTemplate(templateKey)
+  if (tmpl) {
+    const submittedList = opts.entries.length > 0
+      ? `<ul>${opts.entries.map(e => `<li>${e.title} (${e.type.toUpperCase()})</li>`).join('')}</ul>`
+      : ''
+    const projimLeft = opts.maxProjim - opts.projimCount
+    const printimLeft = opts.maxPrintim - opts.printimCount
+    const slotsRemaining = [
+      projimLeft > 0 ? `${projimLeft} PROJIM` : '',
+      printimLeft > 0 ? `${printimLeft} PRINTIM` : '',
+    ].filter(Boolean).join(', ')
+    const vars = {
+      member_name: opts.memberName,
+      competition_name: opts.competitionName,
+      closes_date: closes,
+      submission_link: makeButton(link, 'Manage your entries'),
+      submission_url: link,
+      submitted_entries: submittedList,
+      slots_remaining: slotsRemaining,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
+  const html = `
+<p>Hi ${opts.memberName},</p>
+${defaultIntro}
+<p>Entries close on <strong>${closes}</strong>.</p>
+<p>${makeButton(link, 'Manage your entries')}</p>
+<p>—<br>Wairarapa Camera Club</p>
+`
+  return { subject: defaultSubject, html }
+}
+
 export async function resultsNotificationEmail(opts: {
   memberName: string
   competitionName: string

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 
@@ -96,12 +96,43 @@ function CommentEditor({
   )
 }
 
+function Lightbox({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none"
+      >
+        &times;
+      </button>
+      <img
+        src={url}
+        alt={title}
+        className="max-w-full max-h-full object-contain rounded shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      />
+      <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-sm">{title}</div>
+    </div>
+  )
+}
+
 function EntryCard({
   entry,
   onScore,
+  onImageClick,
 }: {
   entry: Entry
   onScore: (id: string, award: string | null, comment: string) => Promise<void>
+  onImageClick: (url: string, title: string) => void
 }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -137,7 +168,8 @@ function EntryCard({
           <img
             src={entry.driveThumbnailUrl}
             alt={entry.title}
-            className="w-full h-48 object-cover rounded-t-xl"
+            onClick={() => entry.driveFileUrl && onImageClick(entry.driveFileUrl, entry.title)}
+            className={`w-full h-48 object-cover rounded-t-xl ${entry.driveFileUrl ? 'cursor-zoom-in' : ''}`}
           />
         ) : (
           <div className="w-full h-48 bg-gray-100 rounded-t-xl flex items-center justify-center text-gray-300 text-4xl">
@@ -156,25 +188,14 @@ function EntryCard({
             ✓ Scored
           </span>
         )}
-
-        {entry.driveFileUrl && (
-          <a
-            href={entry.driveFileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded hover:bg-black/70"
-          >
-            Full size ↗
-          </a>
-        )}
       </div>
 
       <div className="p-4 space-y-3">
         {/* Title + member# */}
         <div>
-          <div className="font-semibold text-gray-900 text-sm">{entry.title}</div>
-          <div className="text-xs text-gray-400 mt-0.5">
-            Member #{entry.memberNumber ?? '—'}
+          <div className="font-semibold text-gray-900 text-sm">
+            {entry.title}
+            {entry.memberNumber && <span className="text-gray-400 font-normal ml-1">(#{entry.memberNumber})</span>}
           </div>
         </div>
 
@@ -226,6 +247,7 @@ export default function Judge() {
   const [completing, setCompleting] = useState(false)
   const [completeMsg, setCompleteMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [filter, setFilter] = useState<'all' | 'projim' | 'printim' | 'unscored'>('all')
+  const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null)
 
   async function load() {
     const res = await fetch(`/api/judge/${token}`)
@@ -302,6 +324,8 @@ export default function Judge() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {lightbox && <Lightbox url={lightbox.url} title={lightbox.title} onClose={() => setLightbox(null)} />}
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
@@ -317,13 +341,21 @@ export default function Judge() {
           </div>
 
           {/* Progress */}
-          <div className="text-right shrink-0">
-            <div className="text-sm font-semibold text-gray-900">{scoredCount}/{total} scored</div>
-            <div className="mt-1 w-32 bg-gray-200 rounded-full h-1.5">
-              <div
-                className="bg-amber-500 h-1.5 rounded-full transition-all"
-                style={{ width: `${pct}%` }}
-              />
+          <div className="flex items-center gap-4 shrink-0">
+            <Link
+              to={`/judge/${token}/reference`}
+              className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Reference view
+            </Link>
+            <div className="text-right">
+              <div className="text-sm font-semibold text-gray-900">{scoredCount}/{total} scored</div>
+              <div className="mt-1 w-32 bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-amber-500 h-1.5 rounded-full transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -378,7 +410,7 @@ export default function Judge() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map(entry => (
-              <EntryCard key={entry.id} entry={entry} onScore={handleScore} />
+              <EntryCard key={entry.id} entry={entry} onScore={handleScore} onImageClick={(url, title) => setLightbox({ url, title })} />
             ))}
           </div>
         )}

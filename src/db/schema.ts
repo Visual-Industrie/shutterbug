@@ -34,6 +34,7 @@ export const emailTypeEnum = pgEnum('email_type', [
   'member_history_link',
   'subs_reminder',
   'one_off',
+  'deadline_reminder',
 ])
 
 // ─── Members ──────────────────────────────────────────────────────────────────
@@ -186,6 +187,7 @@ export const entries = pgTable('entries', {
   judgedAt: timestamp('judged_at', { withTimezone: true }),
   judgedBy: uuid('judged_by').references(() => judges.id),
   pointsAwarded: integer('points_awarded'), // snapshot at time of judging
+  sortOrder: integer('sort_order'), // for judge reference view ordering
   submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -223,6 +225,21 @@ export const adminUsers = pgTable('admin_users', {
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+export const payments = pgTable('payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  memberId: uuid('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+  year: integer('year').notNull(),
+  amount: numeric('amount', { precision: 8, scale: 2 }),
+  paymentDate: date('payment_date').notNull().default(sql`CURRENT_DATE`),
+  notes: text('notes'),
+  recordedBy: uuid('recorded_by').references(() => adminUsers.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('idx_payments_member').on(t.memberId),
+])
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 

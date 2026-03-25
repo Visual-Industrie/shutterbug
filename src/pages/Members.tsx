@@ -19,6 +19,15 @@ interface Member {
   annual_sub_amount: string | null
 }
 
+interface Payment {
+  id: string
+  year: number
+  amount: string | null
+  payment_date: string
+  notes: string | null
+  recorded_by_name: string | null
+}
+
 interface MemberForm {
   first_name: string
   last_name: string
@@ -65,6 +74,18 @@ export default function Members() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<MemberForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
+
+  // Payment history modal
+  const [showPayments, setShowPayments] = useState(false)
+  const [paymentsForMember, setPaymentsForMember] = useState<Member | null>(null)
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
+  const [paymentYear, setPaymentYear] = useState(String(new Date().getFullYear()))
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentSaving, setPaymentSaving] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
   const { data: allMembers = [], isLoading } = useQuery({
     queryKey: ['members'],
@@ -113,6 +134,53 @@ export default function Members() {
       setHistoryMsg(prev => ({ ...prev, [id]: 'sent' }))
     } catch {
       setHistoryMsg(prev => ({ ...prev, [id]: 'err' }))
+    }
+  }
+
+  async function openPayments(m: Member) {
+    setPaymentsForMember(m)
+    setPayments([])
+    setPaymentsLoading(true)
+    setPaymentError(null)
+    setPaymentYear(String(new Date().getFullYear()))
+    setPaymentAmount(m.annual_sub_amount ?? '')
+    setPaymentDate(new Date().toISOString().split('T')[0])
+    setPaymentNotes('')
+    setShowPayments(true)
+    try {
+      const data = await apiFetch<Payment[]>(`/api/members/${m.id}/payments`)
+      setPayments(data)
+    } catch {
+      setPaymentError('Failed to load payment history')
+    } finally {
+      setPaymentsLoading(false)
+    }
+  }
+
+  async function handleRecordPayment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!paymentsForMember) return
+    setPaymentSaving(true)
+    setPaymentError(null)
+    try {
+      await apiFetch(`/api/members/${paymentsForMember.id}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          year: parseInt(paymentYear, 10),
+          amount: paymentAmount || null,
+          payment_date: paymentDate || null,
+          notes: paymentNotes || null,
+        }),
+      })
+      // Refresh payments list + members
+      const data = await apiFetch<Payment[]>(`/api/members/${paymentsForMember.id}/payments`)
+      setPayments(data)
+      setPaymentNotes('')
+      queryClient.invalidateQueries({ queryKey: ['members'] })
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : 'Failed to record payment')
+    } finally {
+      setPaymentSaving(false)
     }
   }
 
@@ -254,6 +322,12 @@ export default function Members() {
                         >
                           Edit
                         </button>
+                        <button
+                          onClick={() => openPayments(m)}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+                        >
+                          Payments
+                        </button>
                         {!isPrivate(m.email) && (
                           <button
                             onClick={() => sendHistoryLink(m.id)}
@@ -276,6 +350,118 @@ export default function Members() {
           </table>
         )}
       </div>
+
+      {/* Payment History Modal */}
+      {showPayments && paymentsForMember && (
+        <div className="fixed inset-0 z-50 flex items-start justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowPayments(false)} />
+          <div className="relative bg-white h-full w-full max-w-md shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Payment history</h2>
+                <p className="text-sm text-gray-500">{paymentsForMember.first_name} {paymentsForMember.last_name}</p>
+              </div>
+              <button onClick={() => setShowPayments(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Record new payment */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Record payment</h3>
+                <form onSubmit={handleRecordPayment} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Year *</label>
+                      <input
+                        type="number"
+                        required
+                        value={paymentYear}
+                        onChange={e => setPaymentYear(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Amount</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={paymentAmount}
+                        onChange={e => setPaymentAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Payment date</label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={e => setPaymentDate(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                    <input
+                      type="text"
+                      value={paymentNotes}
+                      onChange={e => setPaymentNotes(e.target.value)}
+                      placeholder="e.g. Bank transfer, cash…"
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  {paymentError && (
+                    <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{paymentError}</div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={paymentSaving}
+                    className="w-full py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
+                  >
+                    {paymentSaving ? 'Recording…' : 'Record payment'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Payment history */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">History</h3>
+                {paymentsLoading ? (
+                  <p className="text-sm text-gray-400">Loading…</p>
+                ) : payments.length === 0 ? (
+                  <p className="text-sm text-gray-400">No payments recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {payments.map(p => (
+                      <div key={p.id} className="bg-gray-50 rounded-lg px-4 py-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-900">{p.year}</span>
+                          <span className="text-green-700 font-medium">
+                            {p.amount ? `$${parseFloat(p.amount).toFixed(2)}` : 'Amount not recorded'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {p.payment_date && new Date(p.payment_date).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          {p.recorded_by_name && <span> · Recorded by {p.recorded_by_name}</span>}
+                        </div>
+                        {p.notes && <div className="text-xs text-gray-400 mt-0.5 italic">{p.notes}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200">
+              <button type="button" onClick={() => setShowPayments(false)} className="w-full py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Member Modal */}
       {showModal && (

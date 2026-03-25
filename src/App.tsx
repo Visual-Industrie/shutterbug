@@ -23,6 +23,7 @@ import EmailLog from '@/pages/EmailLog'
 import CompetitionDetail from '@/pages/CompetitionDetail'
 import Submit from '@/pages/Submit'
 import Judge from '@/pages/Judge'
+import JudgeReference from '@/pages/JudgeReference'
 import History from '@/pages/History'
 import Join from '@/pages/Join'
 import Profile from '@/pages/Profile'
@@ -43,6 +44,7 @@ export default function App() {
           {/* Token-based portals (no auth) */}
           <Route path="/submit/:token" element={<Submit />} />
           <Route path="/judge/:token" element={<Judge />} />
+          <Route path="/judge/:token/reference" element={<JudgeReference />} />
           <Route path="/history/:token" element={<History />} />
 
           {/* Admin — protected + Layout */}

@@ -81,21 +81,42 @@ export default function Submit() {
     setUploadMsg(null)
 
     try {
-      setUploadStatus('Uploading…')
-      const formData = new FormData()
-      formData.append('type', type)
-      formData.append('title', title)
-      if (file) formData.append('file', file)
+      let driveFileId: string | null = null
 
+      if (file) {
+        // Step 1: create Drive upload session
+        setUploadStatus('Preparing upload…')
+        const sessionRes = await fetch(`/api/submit/${token}/entries/session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, title }),
+        })
+        const sessionJson = await sessionRes.json()
+        if (!sessionRes.ok) { setUploadMsg({ text: sessionJson.error ?? 'Upload failed', ok: false }); return }
+
+        if (sessionJson.uploadUrl) {
+          // Step 2: upload file directly to Drive (bypasses Vercel size limit)
+          setUploadStatus('Uploading image…')
+          const uploadRes = await fetch(sessionJson.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'image/jpeg' },
+            body: file,
+          })
+          if (!uploadRes.ok) { setUploadMsg({ text: 'Image upload failed', ok: false }); return }
+          const uploadJson = await uploadRes.json().catch(() => null)
+          driveFileId = uploadJson?.id ?? null
+        }
+      }
+
+      // Step 3: finalize entry
+      setUploadStatus('Saving entry…')
       const res = await fetch(`/api/submit/${token}/entries`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, title, driveFileId }),
       })
       const json = await res.json()
-      if (!res.ok) {
-        setUploadMsg({ text: json.error ?? 'Upload failed', ok: false })
-        return
-      }
+      if (!res.ok) { setUploadMsg({ text: json.error ?? 'Upload failed', ok: false }); return }
 
       setUploadMsg({ text: 'Entry submitted!', ok: true })
       setTitle('')

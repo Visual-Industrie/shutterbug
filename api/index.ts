@@ -23,8 +23,7 @@ import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.j
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
 import archiver from 'archiver'
-import { uploadToDrive, deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDriveFile } from './_lib/drive.js'
-import { parseUpload } from './_lib/parse-upload.js'
+import { deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDriveFile } from './_lib/drive.js'
 import { processImage, generateThumbnail, buildEntryFilename } from './_lib/image.js'
 import { getPool } from './_lib/db.js'
 
@@ -417,77 +416,101 @@ app.get('/api/competitions/:id/entries', async (req, res) => {
   }
 })
 
-app.post('/api/competitions/:id/entries', async (req, res) => {
+// Step 1: validate + create Drive upload session for admin entry
+app.post('/api/competitions/:id/entries/session', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { fields, file } = await parseUpload(req)
-  const { memberId, title } = fields
-  const type = fields.type as 'projim' | 'printim'
+  const { memberId, type, title } = req.body ?? {}
   if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
   if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
   if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
 
   const pool = getPool()
-
-  // Validate competition + member exist
   const compRes = await pool.query(
-    `SELECT id, name, status, max_projim_entries, max_printim_entries, judging_closes_at FROM competitions WHERE id = $1`,
+    `SELECT id, name, max_projim_entries, max_printim_entries, judging_closes_at FROM competitions WHERE id = $1`,
     [req.params.id],
   )
   const comp = compRes.rows[0]
   if (!comp) return void res.status(404).json({ error: 'Competition not found' })
 
-  const memberRes = await pool.query(
-    `SELECT id, membership_number FROM members WHERE id = $1`,
-    [memberId],
-  )
+  const memberRes = await pool.query(`SELECT id, membership_number FROM members WHERE id = $1`, [memberId])
   if (!memberRes.rows[0]) return void res.status(404).json({ error: 'Member not found' })
-  const member = memberRes.rows[0]
 
-  // Enforce entry limits
   const countRes = await pool.query(
     `SELECT type, COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2 GROUP BY type`,
     [req.params.id, memberId],
   )
   const counts = Object.fromEntries(countRes.rows.map((r: { type: string; cnt: string }) => [r.type, parseInt(r.cnt, 10)]))
   if (type === 'projim' && (counts.projim ?? 0) >= comp.max_projim_entries) {
-    return void res.status(400).json({ error: `This member already has ${comp.max_projim_entries} PROJIM entry` })
+    return void res.status(400).json({ error: `This member already has ${comp.max_projim_entries} PROJIM entries` })
   }
   if (type === 'printim' && (counts.printim ?? 0) >= comp.max_printim_entries) {
     return void res.status(400).json({ error: `This member already has ${comp.max_printim_entries} PRINTIM entries` })
   }
 
-  let driveResult = null
-  if (file && file.buffer.length > 0) {
+  try {
+    const uploadUrl = await createDriveUploadSession({ competitionName: comp.name, judgingClosesAt: comp.judging_closes_at })
+    res.json({ uploadUrl: uploadUrl ?? null })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to create upload session' })
+  }
+})
+
+// Step 2: finalize admin entry — process image, save to DB
+app.post('/api/competitions/:id/entries', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { memberId, type: rawType, title, driveFileId } = req.body ?? {}
+  const type = rawType as 'projim' | 'printim'
+  if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
+  if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
+
+  const pool = getPool()
+  const compRes = await pool.query(
+    `SELECT id, name, max_projim_entries, max_printim_entries, judging_closes_at FROM competitions WHERE id = $1`,
+    [req.params.id],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+  const memberRes = await pool.query(`SELECT id, membership_number FROM members WHERE id = $1`, [memberId])
+  if (!memberRes.rows[0]) return void res.status(404).json({ error: 'Member not found' })
+  const member = memberRes.rows[0]
+
+  // Re-check limits at finalize time
+  const countRes = await pool.query(
+    `SELECT type, COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2 GROUP BY type`,
+    [req.params.id, memberId],
+  )
+  const counts = Object.fromEntries(countRes.rows.map((r: { type: string; cnt: string }) => [r.type, parseInt(r.cnt, 10)]))
+  if (type === 'projim' && (counts.projim ?? 0) >= comp.max_projim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_projim_entries} PROJIM entries` })
+  }
+  if (type === 'printim' && (counts.printim ?? 0) >= comp.max_printim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_printim_entries} PRINTIM entries` })
+  }
+
+  let driveFileUrl: string | null = null
+  let driveThumbnailUrl: string | null = null
+  let finalDriveFileId: string | null = driveFileId ?? null
+
+  if (driveFileId) {
     try {
-      const processedBuffer = await processImage(file.buffer)
+      const rawBuffer = await downloadFromDrive(driveFileId)
+      const processedBuffer = await processImage(rawBuffer)
       const thumbnailBuffer = await generateThumbnail(processedBuffer)
-      const filename = buildEntryFilename({
-        type,
-        title,
-        membershipNumber: member.membership_number,
-        originalFilename: file.filename || `${title}.jpg`,
-      })
-      driveResult = await uploadToDrive({
-        buffer: processedBuffer,
-        thumbnailBuffer,
-        filename,
-        mimeType: 'image/jpeg',
-        competitionId: comp.id,
-        competitionName: comp.name,
-        judgingClosesAt: comp.judging_closes_at,
-      })
+      const filename = buildEntryFilename({ type, title, membershipNumber: member.membership_number, originalFilename: 'upload.jpg' })
+      const result = await processDriveFile({ driveFileId, filename, processedBuffer, thumbnailBuffer })
+      driveFileUrl = result.driveFileUrl
+      driveThumbnailUrl = result.driveThumbnailUrl
     } catch (err) {
-      console.error('Admin entry drive upload failed', err)
+      console.error('Admin entry drive processing failed', err)
     }
   }
 
   const insertRes = await pool.query(
     `INSERT INTO entries (competition_id, member_id, type, title, drive_file_id, drive_file_url, drive_thumbnail_url)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [req.params.id, memberId, type, title.trim(),
-     driveResult?.driveFileId ?? null,
-     driveResult?.driveFileUrl ?? null,
-     driveResult?.driveThumbnailUrl ?? null],
+    [req.params.id, memberId, type, title.trim(), finalDriveFileId, driveFileUrl, driveThumbnailUrl],
   )
   res.status(201).json({ id: insertRes.rows[0].id })
 })
@@ -1110,17 +1133,19 @@ app.get('/api/submit/:token', async (req, res) => {
   res.json(data)
 })
 
+// Member submission finalize — receives driveFileId from browser after direct Drive upload
 app.post('/api/submit/:token/entries', async (req, res) => {
-  const { fields, file } = await parseUpload(req)
-  const type = fields.type as 'projim' | 'printim'
-  const title = fields.title ?? ''
+  const { type: rawType, title, driveFileId } = req.body ?? {}
+  const type = rawType as 'projim' | 'printim'
   if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
-  if (!title.trim()) return void res.status(400).json({ error: 'Title is required' })
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
 
-  let driveResult = null
-  if (file && file.buffer.length > 0) {
+  let driveFileUrl: string | null = null
+  let driveThumbnailUrl: string | null = null
+
+  if (driveFileId) {
     const compRes = await getPool().query(
-      `SELECT c.id, c.name, c.judging_closes_at, m.membership_number
+      `SELECT c.name, c.judging_closes_at, m.membership_number
        FROM competitions c
        JOIN tokens t ON t.competition_id = c.id
        JOIN members m ON m.id = t.member_id
@@ -1129,23 +1154,17 @@ app.post('/api/submit/:token/entries', async (req, res) => {
     )
     const comp = compRes.rows[0]
     if (comp) {
-      const processedBuffer = await processImage(file.buffer)
-      const thumbnailBuffer = await generateThumbnail(processedBuffer)
-      const filename = buildEntryFilename({
-        type,
-        title,
-        membershipNumber: comp.membership_number,
-        originalFilename: file.filename || `${title}.jpg`,
-      })
-      driveResult = await uploadToDrive({
-        buffer: processedBuffer,
-        thumbnailBuffer,
-        filename,
-        mimeType: 'image/jpeg',
-        competitionId: comp.id,
-        competitionName: comp.name,
-        judgingClosesAt: comp.judging_closes_at,
-      })
+      try {
+        const rawBuffer = await downloadFromDrive(driveFileId)
+        const processedBuffer = await processImage(rawBuffer)
+        const thumbnailBuffer = await generateThumbnail(processedBuffer)
+        const filename = buildEntryFilename({ type, title, membershipNumber: comp.membership_number, originalFilename: 'upload.jpg' })
+        const result = await processDriveFile({ driveFileId, filename, processedBuffer, thumbnailBuffer })
+        driveFileUrl = result.driveFileUrl
+        driveThumbnailUrl = result.driveThumbnailUrl
+      } catch (err) {
+        console.error('Member submission drive processing failed', err)
+      }
     }
   }
 
@@ -1153,9 +1172,9 @@ app.post('/api/submit/:token/entries', async (req, res) => {
     tokenValue: req.params.token,
     type,
     title,
-    driveFileId: driveResult?.driveFileId,
-    driveFileUrl: driveResult?.driveFileUrl,
-    driveThumbnailUrl: driveResult?.driveThumbnailUrl,
+    driveFileId: driveFileId ?? undefined,
+    driveFileUrl: driveFileUrl ?? undefined,
+    driveThumbnailUrl: driveThumbnailUrl ?? undefined,
   })
   if ('error' in result) return void res.status(400).json(result)
   res.status(201).json(result)

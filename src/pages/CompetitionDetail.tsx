@@ -407,22 +407,32 @@ export default function CompetitionDetail() {
           body: JSON.stringify({ title: entryTitle, type: entryType }),
         })
       } else {
-        const formData = new FormData()
-        formData.append('memberId', entryMemberId)
-        formData.append('type', entryType)
-        formData.append('title', entryTitle)
-        if (entryFile) formData.append('file', entryFile)
+        let driveFileId: string | null = null
 
-        const token = localStorage.getItem('sb_admin_token')
-        const res = await fetch(`/api/competitions/${id}/entries`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        })
-        if (!res.ok) {
-          const j = await res.json()
-          throw new Error(j.error ?? 'Failed to add entry')
+        if (entryFile) {
+          // Step 1: get Drive resumable upload session
+          const sessionRes = await apiFetch<{ uploadUrl: string | null }>(`/api/competitions/${id}/entries/session`, {
+            method: 'POST',
+            body: JSON.stringify({ memberId: entryMemberId, type: entryType, title: entryTitle }),
+          })
+          if (sessionRes.uploadUrl) {
+            // Step 2: upload file directly to Drive
+            const uploadRes = await fetch(sessionRes.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': entryFile.type || 'image/jpeg' },
+              body: entryFile,
+            })
+            if (!uploadRes.ok) throw new Error('Image upload to Drive failed')
+            const uploadJson = await uploadRes.json().catch(() => null)
+            driveFileId = uploadJson?.id ?? null
+          }
         }
+
+        // Step 3: finalize — process image + save entry
+        await apiFetch(`/api/competitions/${id}/entries`, {
+          method: 'POST',
+          body: JSON.stringify({ memberId: entryMemberId, type: entryType, title: entryTitle, driveFileId }),
+        })
       }
       setShowAddEntry(false)
       refetchEntries()

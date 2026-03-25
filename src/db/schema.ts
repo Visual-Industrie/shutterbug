@@ -241,6 +241,15 @@ export const payments = pgTable('payments', {
   index('idx_payments_member').on(t.memberId),
 ])
 
+// ─── Google OAuth Tokens ──────────────────────────────────────────────────────
+
+export const googleOAuthTokens = pgTable('google_oauth_tokens', {
+  id: integer('id').primaryKey().default(1),
+  refreshToken: text('refresh_token').notNull(),
+  email: text('email'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export const settings = pgTable('settings', {

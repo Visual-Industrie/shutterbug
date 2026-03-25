@@ -851,6 +851,109 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
   res.json({ memberId: memberRes.rows[0].id })
 })
 
+// ── Google OAuth integration ──────────────────────────────────────────────────
+
+function requireIntegrationsAccess(req: express.Request, res: express.Response): boolean {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return false }
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { role: string }
+    const allowed = ['super_admin', 'competition_secretary', 'president']
+    if (!allowed.includes(payload.role)) { res.status(403).json({ error: 'Forbidden' }); return false }
+    return true
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return false
+  }
+}
+
+app.get('/api/integrations/google/status', async (req, res) => {
+  if (!requireIntegrationsAccess(req, res)) return
+  try {
+    const result = await getPool().query(`SELECT email, updated_at FROM google_oauth_tokens WHERE id = 1`)
+    if (result.rows[0]) {
+      res.json({ connected: true, email: result.rows[0].email, updatedAt: result.rows[0].updated_at })
+    } else if (process.env.GOOGLE_REFRESH_TOKEN) {
+      res.json({ connected: true, email: null, updatedAt: null, via: 'env' })
+    } else {
+      res.json({ connected: false })
+    }
+  } catch {
+    res.json({ connected: false })
+  }
+})
+
+app.get('/api/integrations/google/start', async (req, res) => {
+  if (!requireIntegrationsAccess(req, res)) return
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+  const appUrl = process.env.APP_URL ?? `https://${req.headers.host}`
+  if (!clientId || !clientSecret) return void res.status(500).json({ error: 'Google OAuth not configured (missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)' })
+
+  const { OAuth2Client } = await import('google-auth-library')
+  const redirectUri = `${appUrl}/api/integrations/google/callback`
+  const client = new OAuth2Client(clientId, clientSecret, redirectUri)
+
+  // Use a signed JWT as the state to prevent CSRF
+  const state = jwt.sign({ redirect: '/settings?tab=integrations' }, JWT_SECRET(), { expiresIn: '10m' })
+
+  const url = client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/userinfo.email'],
+    state,
+  })
+  res.json({ url })
+})
+
+app.get('/api/integrations/google/callback', async (req, res) => {
+  const { code, state, error } = req.query as Record<string, string>
+  const appUrl = process.env.APP_URL ?? `https://${req.headers.host}`
+
+  if (error) return void res.redirect(`${appUrl}/settings?tab=integrations&error=${encodeURIComponent(error)}`)
+
+  try {
+    jwt.verify(state, JWT_SECRET()) // CSRF check
+  } catch {
+    return void res.redirect(`${appUrl}/settings?tab=integrations&error=invalid_state`)
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID!
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
+  const redirectUri = `${appUrl}/api/integrations/google/callback`
+
+  try {
+    const { OAuth2Client } = await import('google-auth-library')
+    const client = new OAuth2Client(clientId, clientSecret, redirectUri)
+    const { tokens } = await client.getToken(code)
+    if (!tokens.refresh_token) throw new Error('No refresh token returned — ensure prompt=consent was set')
+
+    // Fetch the account email
+    client.setCredentials(tokens)
+    const oauth2 = (await import('googleapis')).google.oauth2({ version: 'v2', auth: client })
+    const userInfo = await oauth2.userinfo.get()
+    const email = userInfo.data.email ?? null
+
+    await getPool().query(
+      `INSERT INTO google_oauth_tokens (id, refresh_token, email, updated_at)
+       VALUES (1, $1, $2, now())
+       ON CONFLICT (id) DO UPDATE SET refresh_token = $1, email = $2, updated_at = now()`,
+      [tokens.refresh_token, email],
+    )
+
+    res.redirect(`${appUrl}/settings?tab=integrations&connected=1`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'OAuth error'
+    res.redirect(`${appUrl}/settings?tab=integrations&error=${encodeURIComponent(msg)}`)
+  }
+})
+
+app.delete('/api/integrations/google', async (req, res) => {
+  if (!requireIntegrationsAccess(req, res)) return
+  await getPool().query(`DELETE FROM google_oauth_tokens WHERE id = 1`)
+  res.json({ ok: true })
+})
+
 // ── Settings routes (super_admin only) ────────────────────────────────────────
 
 function requireSuperAdmin(req: express.Request, res: express.Response): boolean {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { apiFetch } from '@/lib/api'
@@ -51,9 +51,10 @@ interface MemberOption {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'comp',      label: 'Competition Defaults' },
-  { id: 'committee', label: 'Committee' },
-  { id: 'subs',      label: 'Subscriptions' },
+  { id: 'comp',         label: 'Competition Defaults', roles: null },
+  { id: 'committee',    label: 'Committee',            roles: null },
+  { id: 'subs',         label: 'Subscriptions',        roles: null },
+  { id: 'integrations', label: 'Integrations',         roles: ['super_admin', 'competition_secretary', 'president'] },
 ]
 
 const COMP_POINTS_KEYS = [
@@ -84,13 +85,127 @@ function memberName(m: Pick<CommitteeMember, 'first_name' | 'last_name' | 'membe
   return m.membership_number ? `${name} (#${m.membership_number})` : name
 }
 
+// ── Google Drive Panel ────────────────────────────────────────────────────────
+
+interface DriveStatus { connected: boolean; email?: string | null; updatedAt?: string | null; via?: string }
+
+function GoogleDrivePanel() {
+  const queryClient = useQueryClient()
+  const params = new URLSearchParams(window.location.search)
+  const urlError = params.get('error')
+  const urlConnected = params.get('connected')
+
+  const { data: status, isLoading } = useQuery<DriveStatus>({
+    queryKey: ['google-drive-status'],
+    queryFn: () => apiFetch<DriveStatus>('/api/integrations/google/status'),
+  })
+
+  const [connecting, setConnecting] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(
+    urlConnected ? { text: 'Google Drive connected successfully.', ok: true }
+    : urlError ? { text: `Connection failed: ${urlError}`, ok: false }
+    : null
+  )
+
+  const connect = useCallback(async () => {
+    setConnecting(true)
+    setMsg(null)
+    try {
+      const { url } = await apiFetch<{ url: string }>('/api/integrations/google/start')
+      window.location.href = url
+    } catch (err) {
+      setMsg({ text: err instanceof Error ? err.message : 'Failed to start OAuth flow', ok: false })
+      setConnecting(false)
+    }
+  }, [])
+
+  const disconnect = useCallback(async () => {
+    if (!confirm('Disconnect Google Drive? Uploads will stop working until reconnected.')) return
+    setDisconnecting(true)
+    try {
+      await apiFetch('/api/integrations/google', { method: 'DELETE' })
+      queryClient.invalidateQueries({ queryKey: ['google-drive-status'] })
+      setMsg({ text: 'Google Drive disconnected.', ok: true })
+    } catch {
+      setMsg({ text: 'Failed to disconnect.', ok: false })
+    } finally {
+      setDisconnecting(false)
+    }
+  }, [queryClient])
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Google Drive</h2>
+            <p className="text-sm text-gray-500 mt-0.5">Used to store competition entry images.</p>
+          </div>
+          <div className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+            isLoading ? 'bg-gray-100 text-gray-400'
+            : status?.connected ? 'bg-green-100 text-green-700'
+            : 'bg-red-100 text-red-700'
+          }`}>
+            {isLoading ? 'Checking…' : status?.connected ? 'Connected' : 'Not connected'}
+          </div>
+        </div>
+
+        {status?.connected && (
+          <div className="text-sm text-gray-600 mb-4 space-y-1">
+            {status.email && <div><span className="text-gray-400">Account:</span> {status.email}</div>}
+            {status.updatedAt && (
+              <div><span className="text-gray-400">Authorised:</span> {new Date(status.updatedAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+            )}
+            {status.via === 'env' && (
+              <div className="text-amber-600 text-xs mt-2">Using token from environment variable. Connect via OAuth to manage it here.</div>
+            )}
+          </div>
+        )}
+
+        {msg && (
+          <div className={`text-sm rounded-lg px-4 py-3 mb-4 ${msg.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+            {msg.text}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={connect}
+            disabled={connecting}
+            className="px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          >
+            {connecting ? 'Redirecting…' : status?.connected ? 'Re-authorise' : 'Connect Google Drive'}
+          </button>
+          {status?.connected && status.via !== 'env' && (
+            <button
+              onClick={disconnect}
+              disabled={disconnecting}
+              className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          )}
+        </div>
+
+        <p className="text-xs text-gray-400 mt-4">
+          After connecting, add <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/integrations/google/callback</code> as an authorised redirect URI in Google Cloud Console.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
-  const [tab, setTab] = useState('comp')
+  const [tab, setTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('tab') ?? 'comp'
+  })
 
   // ── Competition defaults state ─────────────────────────────────────────────
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -255,7 +370,8 @@ export default function Settings() {
   }
 
   // Guard — must come after all hooks
-  if (user?.role !== 'super_admin') return <Navigate to="/" replace />
+  const allowedRoles = ['super_admin', 'competition_secretary', 'president', 'treasurer']
+  if (!user?.role || !allowedRoles.includes(user.role)) return <Navigate to="/" replace />
 
   // Member search
   async function searchMembers(q: string) {
@@ -332,7 +448,7 @@ export default function Settings() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {TABS.map(t => (
+        {TABS.filter(t => !t.roles || t.roles.includes(user!.role)).map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -714,6 +830,9 @@ export default function Settings() {
       )}
 
       {/* ── Edit member modal ── */}
+      {/* ── Integrations tab ── */}
+      {tab === 'integrations' && <GoogleDrivePanel />}
+
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setEditTarget(null)} />

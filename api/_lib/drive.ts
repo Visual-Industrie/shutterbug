@@ -1,12 +1,22 @@
 import { google } from 'googleapis'
 import { Readable } from 'stream'
+import { getPool } from './db.js'
 
-function getAuth() {
+async function getAuth() {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
-  if (!clientId || !clientSecret || !refreshToken) return null
+  if (!clientId || !clientSecret) return null
 
+  // Prefer token stored in DB; fall back to env var
+  let refreshToken = process.env.GOOGLE_REFRESH_TOKEN ?? null
+  try {
+    const res = await getPool().query(`SELECT refresh_token FROM google_oauth_tokens WHERE id = 1`)
+    if (res.rows[0]?.refresh_token) refreshToken = res.rows[0].refresh_token
+  } catch {
+    // DB not available or table doesn't exist yet — use env var
+  }
+
+  if (!refreshToken) return null
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret)
   oauth2.setCredentials({ refresh_token: refreshToken })
   return oauth2
@@ -56,7 +66,7 @@ export async function createDriveUploadSession(opts: {
   competitionName: string
   judgingClosesAt?: string | null
 }): Promise<string | null> {
-  const auth = getAuth()
+  const auth = await getAuth()
   if (!auth) return null
 
   const drive = google.drive({ version: 'v3', auth })
@@ -92,7 +102,7 @@ export async function processDriveFile(opts: {
   thumbnailBuffer?: Buffer
   competitionFolderId?: string
 }): Promise<{ driveFileUrl: string; driveThumbnailUrl: string }> {
-  const auth = getAuth()
+  const auth = await getAuth()
   if (!auth) throw new Error('Drive not configured')
 
   const drive = google.drive({ version: 'v3', auth })
@@ -146,7 +156,7 @@ export async function processDriveFile(opts: {
 
 /** Downloads a file from Drive into memory and returns a Buffer. */
 export async function downloadFromDrive(driveFileId: string): Promise<Buffer> {
-  const auth = getAuth()
+  const auth = await getAuth()
   if (!auth) throw new Error('Drive not configured')
 
   const { token } = await auth.getAccessToken()
@@ -169,7 +179,7 @@ export async function uploadToDrive(opts: {
   competitionName: string
   judgingClosesAt?: string | null
 }): Promise<{ driveFileId: string; driveFileUrl: string; driveThumbnailUrl: string } | null> {
-  const auth = getAuth()
+  const auth = await getAuth()
   if (!auth) {
     console.log('[Drive] No service account configured — skipping upload')
     return null
@@ -232,7 +242,7 @@ export async function uploadToDrive(opts: {
 }
 
 export async function deleteFromDrive(driveFileId: string): Promise<void> {
-  const auth = getAuth()
+  const auth = await getAuth()
   if (!auth) return
   const drive = google.drive({ version: 'v3', auth })
   await drive.files.delete({ fileId: driveFileId, supportsAllDrives: true }).catch(() => { /* ignore */ })

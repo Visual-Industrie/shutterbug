@@ -97,12 +97,29 @@ function CommentEditor({
   )
 }
 
+function Lightbox({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none">&times;</button>
+      <img src={url} alt={title} className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
+      <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-sm">{title}</div>
+    </div>
+  )
+}
+
 function EntryCard({
   entry,
   onScore,
+  onImageClick,
 }: {
   entry: Entry
   onScore: (id: string, award: string | null, comment: string) => Promise<void>
+  onImageClick: (url: string, title: string) => void
 }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -138,7 +155,7 @@ function EntryCard({
           <img
             src={entry.driveThumbnailUrl}
             alt={entry.title}
-            onClick={() => entry.driveFileUrl && window.open(entry.driveFileUrl, '_blank')}
+            onClick={() => entry.driveFileUrl && onImageClick(entry.driveFileUrl, entry.title)}
             className={`w-full h-48 object-cover rounded-t-xl ${entry.driveFileUrl ? 'cursor-zoom-in' : ''}`}
           />
         ) : (
@@ -217,6 +234,7 @@ export default function Judge() {
   const [completing, setCompleting] = useState(false)
   const [completeMsg, setCompleteMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [filter, setFilter] = useState<'all' | 'projim' | 'printim' | 'unscored'>('all')
+  const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null)
 
   async function load() {
     const res = await fetch(`/api/judge/${token}`)
@@ -295,6 +313,7 @@ export default function Judge() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {lightbox && <Lightbox url={lightbox.url} title={lightbox.title} onClose={() => setLightbox(null)} />}
 
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -380,7 +399,7 @@ export default function Judge() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map(entry => (
-              <EntryCard key={entry.id} entry={entry} onScore={handleScore} />
+              <EntryCard key={entry.id} entry={entry} onScore={handleScore} onImageClick={(url, title) => setLightbox({ url, title })} />
             ))}
           </div>
         )}

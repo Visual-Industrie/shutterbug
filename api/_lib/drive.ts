@@ -149,7 +149,7 @@ export async function processDriveFile(opts: {
   }
 
   return {
-    driveFileUrl: `https://drive.google.com/uc?export=view&id=${opts.driveFileId}`,
+    driveFileUrl: `${process.env.IMAGE_PROXY_URL ?? 'https://shutterbug-drive-proxy.web-bfb.workers.dev'}/${opts.driveFileId}`,
     driveThumbnailUrl,
   }
 }
@@ -236,7 +236,7 @@ export async function uploadToDrive(opts: {
 
   return {
     driveFileId: fileId,
-    driveFileUrl: `https://drive.google.com/uc?export=view&id=${fileId}`,
+    driveFileUrl: `${process.env.IMAGE_PROXY_URL ?? 'https://shutterbug-drive-proxy.web-bfb.workers.dev'}/${fileId}`,
     driveThumbnailUrl,
   }
 }

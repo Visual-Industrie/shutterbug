@@ -227,7 +227,7 @@ export default function JudgeReference() {
 
       {/* Header */}
       <header className="bg-white border-b border-gray-200 no-print">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <div className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">
               Wairarapa Camera Club · Judging Reference
@@ -242,7 +242,7 @@ export default function JudgeReference() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             {saveMsg && (
               <span className={`text-xs ${saveMsg === 'Order saved' ? 'text-green-600' : 'text-red-600'}`}>
                 {saveMsg}

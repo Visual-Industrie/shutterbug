@@ -1282,6 +1282,24 @@ app.delete('/api/submit/:token/entries', async (req, res) => {
   res.json({ ok: true })
 })
 
+// ── Drive image proxy (validates fileId exists in entries table) ──────────────
+
+app.get('/api/drive/image/:fileId', async (req, res) => {
+  const { fileId } = req.params
+  try {
+    // Validate this fileId actually belongs to an entry (prevents arbitrary file access)
+    const check = await getPool().query(`SELECT 1 FROM entries WHERE drive_file_id = $1 LIMIT 1`, [fileId])
+    if (!check.rows.length) return void res.status(404).json({ error: 'Not found' })
+
+    const buffer = await downloadFromDrive(fileId)
+    res.setHeader('Content-Type', 'image/jpeg')
+    res.setHeader('Cache-Control', 'public, max-age=86400')
+    res.send(buffer)
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load image' })
+  }
+})
+
 // ── Judge portal (public, token-gated) ────────────────────────────────────────
 
 app.get('/api/judge/:token', async (req, res) => {
@@ -1323,7 +1341,7 @@ app.get('/api/judge/:token/reference', async (req, res) => {
   if (!comp) return void res.status(404).json({ error: 'Competition not found' })
 
   const entriesRes = await pool.query(
-    `SELECT e.id, e.type, e.title, e.drive_file_url, e.drive_thumbnail_url, e.sort_order,
+    `SELECT e.id, e.type, e.title, e.drive_file_id, e.drive_file_url, e.drive_thumbnail_url, e.sort_order,
             e.award, e.judge_comment, e.judged_at,
             m.first_name, m.last_name, m.membership_number
      FROM entries e

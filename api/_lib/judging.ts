@@ -6,6 +6,7 @@ export interface JudgingEntry {
   type: string
   title: string
   memberNumber: string | null  // anonymised — never name
+  driveFileId: string | null
   driveFileUrl: string | null
   driveThumbnailUrl: string | null
   award: string | null
@@ -52,6 +53,7 @@ export async function getJudgingData(tokenValue: string): Promise<JudgingPageDat
   const entriesRes = await pool.query(
     `SELECT e.id, e.type, e.title,
             m.membership_number AS "memberNumber",
+            e.drive_file_id AS "driveFileId",
             e.drive_file_url AS "driveFileUrl",
             e.drive_thumbnail_url AS "driveThumbnailUrl",
             e.award,

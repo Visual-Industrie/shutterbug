@@ -4,4 +4,4 @@
 UPDATE entries
 SET drive_file_url = 'https://drive.google.com/uc?export=view&id=' || drive_file_id
 WHERE drive_file_id IS NOT NULL
-  AND drive_file_url NOT LIKE '%uc?export=view%';
+  AND drive_file_url NOT LIKE 'https://drive.google.com/uc?export=view&id=%';

@@ -315,12 +315,14 @@ export default function Judge() {
   const total = entries.length
   const pct = total > 0 ? Math.round((scoredCount / total) * 100) : 0
 
-  const filtered = entries.filter(e => {
-    if (filter === 'projim') return e.type === 'projim'
-    if (filter === 'printim') return e.type === 'printim'
-    if (filter === 'unscored') return !e.judgedAt
-    return true
-  })
+  const filtered = entries
+    .filter(e => {
+      if (filter === 'projim') return e.type === 'projim'
+      if (filter === 'printim') return e.type === 'printim'
+      if (filter === 'unscored') return !e.judgedAt
+      return true
+    })
+    .sort((a, b) => (a.type === b.type ? 0 : a.type === 'printim' ? -1 : 1))
 
   return (
     <div className="min-h-screen bg-gray-50">

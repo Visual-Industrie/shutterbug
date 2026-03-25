@@ -140,7 +140,7 @@ export default function JudgeReference() {
   const projimEntries = entries.filter(e => e.type === 'projim')
   const printimEntries = entries.filter(e => e.type === 'printim')
 
-  function EntryCard({ entry, globalIdx }: { entry: ReferenceEntry; globalIdx: number }) {
+  function EntryCard({ entry, globalIdx, isFirstInGroup, isLastInGroup }: { entry: ReferenceEntry; globalIdx: number; isFirstInGroup: boolean; isLastInGroup: boolean }) {
     return (
       <div className="entry-card bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col md:flex-row">
         {/* Left: image + meta */}
@@ -175,9 +175,9 @@ export default function JudgeReference() {
             )}
             {!reorderLocked && (
               <div className="flex gap-1 no-print">
-                <button onClick={() => move(globalIdx, 'up')} disabled={saving || globalIdx === 0}
+                <button onClick={() => move(globalIdx, 'up')} disabled={saving || isFirstInGroup}
                   className="px-2 py-0.5 text-xs border border-gray-200 rounded text-gray-500 hover:bg-gray-50 disabled:opacity-30">↑</button>
-                <button onClick={() => move(globalIdx, 'down')} disabled={saving || globalIdx === entries.length - 1}
+                <button onClick={() => move(globalIdx, 'down')} disabled={saving || isLastInGroup}
                   className="px-2 py-0.5 text-xs border border-gray-200 rounded text-gray-500 hover:bg-gray-50 disabled:opacity-30">↓</button>
               </div>
             )}
@@ -270,30 +270,36 @@ export default function JudgeReference() {
           {!reorderLocked && ' · Drag into running order using the arrows'}
         </p>
 
-        {/* PROJIM entries */}
-        {projimEntries.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Projected Images ({projimEntries.length})
-            </h2>
-            <div className="flex flex-col gap-4">
-              {entries.map((entry, globalIdx) => entry.type !== 'projim' ? null : (
-                <EntryCard key={entry.id} entry={entry} globalIdx={globalIdx} />
-              ))}
-            </div>
-          </section>
-        )}
-
         {/* PRINTIM entries */}
         {printimEntries.length > 0 && (
-          <section className={projimEntries.length > 0 ? 'print-section-break' : ''}>
+          <section className="mb-8">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
               Printed Images ({printimEntries.length})
             </h2>
             <div className="flex flex-col gap-4">
-              {entries.map((entry, globalIdx) => entry.type !== 'printim' ? null : (
-                <EntryCard key={entry.id} entry={entry} globalIdx={globalIdx} />
-              ))}
+              {entries.map((entry, globalIdx) => {
+                if (entry.type !== 'printim') return null
+                const groupEntries = entries.filter(e => e.type === 'printim')
+                const groupPos = groupEntries.indexOf(entry)
+                return <EntryCard key={entry.id} entry={entry} globalIdx={globalIdx} isFirstInGroup={groupPos === 0} isLastInGroup={groupPos === groupEntries.length - 1} />
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* PROJIM entries */}
+        {projimEntries.length > 0 && (
+          <section className={printimEntries.length > 0 ? 'print-section-break' : ''}>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              Projected Images ({projimEntries.length})
+            </h2>
+            <div className="flex flex-col gap-4">
+              {entries.map((entry, globalIdx) => {
+                if (entry.type !== 'projim') return null
+                const groupEntries = entries.filter(e => e.type === 'projim')
+                const groupPos = groupEntries.indexOf(entry)
+                return <EntryCard key={entry.id} entry={entry} globalIdx={globalIdx} isFirstInGroup={groupPos === 0} isLastInGroup={groupPos === groupEntries.length - 1} />
+              })}
             </div>
           </section>
         )}

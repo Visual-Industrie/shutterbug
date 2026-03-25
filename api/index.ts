@@ -394,7 +394,7 @@ app.get('/api/competitions/:id/entries', async (req, res) => {
        FROM entries e
        JOIN members m ON m.id = e.member_id
        WHERE e.competition_id = $1
-       ORDER BY COALESCE(e.sort_order, 999999), e.type, e.submitted_at`,
+       ORDER BY CASE WHEN e.type = 'printim' THEN 0 ELSE 1 END, COALESCE(e.sort_order, 999999), e.submitted_at`,
       [req.params.id],
     )
     res.json(result.rows)
@@ -518,8 +518,8 @@ app.get('/api/competitions/:id/download-entries', async (req, res) => {
 
     const entriesRes = await getPool().query(
       typeFilter && typeFilter !== 'all'
-        ? `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL AND type = $2 ORDER BY COALESCE(sort_order, 999999), type, title`
-        : `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL ORDER BY COALESCE(sort_order, 999999), type, title`,
+        ? `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL AND type = $2 ORDER BY COALESCE(sort_order, 999999), title`
+        : `SELECT title, type, drive_file_id FROM entries WHERE competition_id = $1 AND drive_file_id IS NOT NULL ORDER BY CASE WHEN type = 'printim' THEN 0 ELSE 1 END, COALESCE(sort_order, 999999), title`,
       typeFilter && typeFilter !== 'all' ? [id, typeFilter] : [id],
     )
     if (!entriesRes.rows.length) return void res.status(404).json({ error: 'No entries with images found' })
@@ -1188,7 +1188,7 @@ app.get('/api/judge/:token/reference', async (req, res) => {
      FROM entries e
      JOIN members m ON m.id = e.member_id
      WHERE e.competition_id = $1
-     ORDER BY COALESCE(e.sort_order, 999999), e.type, e.submitted_at`,
+     ORDER BY CASE WHEN e.type = 'printim' THEN 0 ELSE 1 END, COALESCE(e.sort_order, 999999), e.submitted_at`,
     [tok.competition_id],
   )
 

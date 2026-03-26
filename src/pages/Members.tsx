@@ -276,6 +276,7 @@ export default function Members() {
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading…</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
@@ -348,6 +349,7 @@ export default function Members() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

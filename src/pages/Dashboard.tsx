@@ -202,6 +202,7 @@ export default function Dashboard() {
       {/* Event Schedule */}
       <h2 className="text-base font-semibold text-gray-800 mb-3">Event schedule — current year</h2>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
@@ -242,6 +243,7 @@ export default function Dashboard() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

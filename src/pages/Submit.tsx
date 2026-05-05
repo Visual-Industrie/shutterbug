@@ -36,9 +36,13 @@ interface PageData {
 
 const TYPE_LABEL: Record<string, string> = { projim: 'PROJIM', printim: 'PRINTIM' }
 
-// Compress image client-side so it fits within Vercel's 4.5MB body limit.
-// The server will re-process with Sharp anyway; this is just for transport.
+const VERCEL_BODY_LIMIT = 4 * 1024 * 1024 // 4MB
+
+// Only compresses if the file exceeds Vercel's body limit.
+// The server re-processes with Sharp regardless; this is just for transport.
 async function compressImage(file: File): Promise<Blob> {
+  if (file.size <= VERCEL_BODY_LIMIT) return file
+
   return new Promise((resolve) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
@@ -59,8 +63,7 @@ async function compressImage(file: File): Promise<Blob> {
       const tryQuality = (q: number) => {
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return }
-          // Keep reducing quality until under 4MB or quality floor reached
-          if (blob.size <= 4 * 1024 * 1024 || q <= 0.5) resolve(blob)
+          if (blob.size <= VERCEL_BODY_LIMIT || q <= 0.5) resolve(blob)
           else tryQuality(Math.round((q - 0.1) * 10) / 10)
         }, 'image/jpeg', q)
       }

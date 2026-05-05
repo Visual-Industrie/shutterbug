@@ -36,6 +36,41 @@ interface PageData {
 
 const TYPE_LABEL: Record<string, string> = { projim: 'PROJIM', printim: 'PRINTIM' }
 
+// Compress image client-side so it fits within Vercel's 4.5MB body limit.
+// The server will re-process with Sharp anyway; this is just for transport.
+async function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = document.createElement('canvas')
+      let { width, height } = img
+      const MAX_DIM = 2400
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+
+      const tryQuality = (q: number) => {
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return }
+          // Keep reducing quality until under 4MB or quality floor reached
+          if (blob.size <= 4 * 1024 * 1024 || q <= 0.5) resolve(blob)
+          else tryQuality(Math.round((q - 0.1) * 10) / 10)
+        }, 'image/jpeg', q)
+      }
+      tryQuality(0.85)
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+    img.src = url
+  })
+}
+
 function fmt(d: string | null) {
   if (!d) return ''
   return new Date(d).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -81,39 +116,23 @@ export default function Submit() {
     setUploadMsg(null)
 
     try {
-      let driveFileId: string | null = null
-
-      if (file) {
-        // Step 1: create Drive upload session
-        setUploadStatus('Preparing upload…')
-        const sessionRes = await fetch(`/api/submit/${token}/entries/session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, title }),
-        })
-        const sessionJson = await sessionRes.json()
-        if (!sessionRes.ok) { setUploadMsg({ text: sessionJson.error ?? 'Upload failed', ok: false }); return }
-
-        if (sessionJson.uploadUrl) {
-          // Step 2: upload file directly to Drive (bypasses Vercel size limit)
-          setUploadStatus('Uploading image…')
-          const uploadRes = await fetch(sessionJson.uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': file.type || 'image/jpeg' },
-            body: file,
-          })
-          if (!uploadRes.ok) { setUploadMsg({ text: 'Image upload failed', ok: false }); return }
-          const uploadJson = await uploadRes.json().catch(() => null)
-          driveFileId = uploadJson?.id ?? null
-        }
+      if (!file) {
+        setUploadMsg({ text: 'Please select an image', ok: false })
+        return
       }
 
-      // Step 3: finalize entry
-      setUploadStatus('Saving entry…')
-      const res = await fetch(`/api/submit/${token}/entries`, {
+      setUploadStatus('Preparing image…')
+      const compressed = await compressImage(file)
+
+      setUploadStatus('Uploading…')
+      const form = new FormData()
+      form.append('type', type)
+      form.append('title', title)
+      form.append('file', compressed, file.name)
+
+      const res = await fetch(`/api/submit/${token}/entries/upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, title, driveFileId }),
+        body: form,
       })
       const json = await res.json()
       if (!res.ok) { setUploadMsg({ text: json.error ?? 'Upload failed', ok: false }); return }

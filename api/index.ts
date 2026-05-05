@@ -23,8 +23,9 @@ import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.j
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
 import archiver from 'archiver'
-import { deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDriveFile } from './_lib/drive.js'
+import { deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDriveFile, uploadToDrive } from './_lib/drive.js'
 import { processImage, generateThumbnail, buildEntryFilename } from './_lib/image.js'
+import { parseUpload } from './_lib/parse-upload.js'
 import { getPool } from './_lib/db.js'
 
 const app = express()
@@ -1178,6 +1179,80 @@ app.post('/api/submit/:token/entries', async (req, res) => {
   })
   if ('error' in result) return void res.status(400).json(result)
   res.status(201).json(result)
+})
+
+// Multipart upload: browser sends file → server processes + uploads to Drive + saves entry
+app.post('/api/submit/:token/entries/upload', async (req, res) => {
+  let parsed: import('./_lib/parse-upload.js').ParsedUpload
+  try {
+    parsed = await parseUpload(req)
+  } catch {
+    return void res.status(400).json({ error: 'Failed to parse upload' })
+  }
+
+  const { type: rawType, title } = parsed.fields
+  const type = rawType as 'projim' | 'printim'
+  if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
+  if (!parsed.file) return void res.status(400).json({ error: 'Image file is required' })
+
+  const compRes = await getPool().query(
+    `SELECT c.id, c.name, c.status, c.closes_at, c.judging_closes_at,
+            c.max_projim_entries, c.max_printim_entries,
+            m.id AS member_id, m.membership_number, t.competition_id
+     FROM competitions c
+     JOIN tokens t ON t.competition_id = c.id
+     JOIN members m ON m.id = t.member_id
+     WHERE t.token = $1 AND t.type = 'submission' AND t.revoked_at IS NULL AND t.expires_at > NOW()`,
+    [req.params.token],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Invalid or expired link' })
+  if (comp.status !== 'open') return void res.status(400).json({ error: 'Competition is not open for submissions' })
+  if (comp.closes_at && new Date(comp.closes_at) < new Date()) {
+    return void res.status(400).json({ error: 'Competition submission window has closed' })
+  }
+
+  const countRes = await getPool().query(
+    `SELECT type, COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2 GROUP BY type`,
+    [comp.competition_id, comp.member_id],
+  )
+  const counts = Object.fromEntries(countRes.rows.map((r: { type: string; cnt: string }) => [r.type, parseInt(r.cnt, 10)]))
+  if (type === 'projim' && (counts.projim ?? 0) >= comp.max_projim_entries) {
+    return void res.status(400).json({ error: `You can only submit ${comp.max_projim_entries} PROJIM entry per competition` })
+  }
+  if (type === 'printim' && (counts.printim ?? 0) >= comp.max_printim_entries) {
+    return void res.status(400).json({ error: `You can only submit ${comp.max_printim_entries} PRINTIM entries per competition` })
+  }
+
+  try {
+    const processedBuffer = await processImage(parsed.file.buffer)
+    const thumbnailBuffer = await generateThumbnail(processedBuffer)
+    const filename = buildEntryFilename({ type, title, membershipNumber: comp.membership_number, originalFilename: parsed.file.filename })
+    const driveResult = await uploadToDrive({
+      buffer: processedBuffer,
+      thumbnailBuffer,
+      filename,
+      mimeType: 'image/jpeg',
+      competitionId: comp.id,
+      competitionName: comp.name,
+      judgingClosesAt: comp.judging_closes_at,
+    })
+
+    const result = await createEntry({
+      tokenValue: req.params.token,
+      type,
+      title,
+      driveFileId: driveResult?.driveFileId ?? null,
+      driveFileUrl: driveResult?.driveFileUrl ?? null,
+      driveThumbnailUrl: driveResult?.driveThumbnailUrl ?? null,
+    })
+    if ('error' in result) return void res.status(400).json(result)
+    res.status(201).json(result)
+  } catch (err) {
+    console.error('Member upload failed', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Upload failed' })
+  }
 })
 
 // Step 1: create a Drive resumable upload session; browser uploads directly

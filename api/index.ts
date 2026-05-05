@@ -820,24 +820,70 @@ app.patch('/api/judges/:id', async (req, res) => {
 // ── Applicant routes ──────────────────────────────────────────────────────────
 
 app.post('/api/applicants', async (req, res) => {
-  const { first_name, last_name, email, phone, privacy_act_ok, image_use_ok, club_rules_ok } = req.body ?? {}
+  const {
+    first_name, last_name, email, phone, landline, address,
+    privacy_act_ok, image_use_ok,
+    experience_level, photographic_interests, software, hear_about_us, known_members,
+    facebook_invite, payment_method, pay_by_date,
+  } = req.body ?? {}
   if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
   if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   if (!privacy_act_ok) return void res.status(400).json({ error: 'Privacy Act consent is required' })
   if (!image_use_ok) return void res.status(400).json({ error: 'Image use consent is required' })
-  if (!club_rules_ok) return void res.status(400).json({ error: 'Club rules agreement is required' })
+
   const existing = await getPool().query(
     `SELECT id FROM applicants WHERE email = $1 AND status = 'pending'`,
     [email.trim().toLowerCase()],
   )
   if (existing.rows.length > 0) return void res.status(409).json({ error: 'An application with this email is already pending' })
+
   const result = await getPool().query(
-    `INSERT INTO applicants (first_name,last_name,email,phone,privacy_act_ok,image_use_ok,club_rules_ok,status,application_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',CURRENT_DATE) RETURNING id`,
-    [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null, true, true, true],
+    `INSERT INTO applicants (
+       first_name, last_name, email, phone, landline, address,
+       privacy_act_ok, image_use_ok, club_rules_ok, status, application_date,
+       experience_level, photographic_interests, software, hear_about_us,
+       known_members, facebook_invite, payment_method, pay_by_date
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,'pending',CURRENT_DATE,$9,$10,$11,$12,$13,$14,$15,$16)
+     RETURNING id`,
+    [
+      first_name.trim(), last_name.trim(), email.trim().toLowerCase(),
+      phone?.trim() || null, landline?.trim() || null, address?.trim() || null,
+      true, true,
+      experience_level || null, photographic_interests?.trim() || null,
+      software?.trim() || null, hear_about_us || null,
+      !!known_members, !!facebook_invite,
+      payment_method || null, pay_by_date || null,
+    ],
   )
-  res.status(201).json({ id: result.rows[0].id })
+  const appId = result.rows[0].id
+
+  // Notify admin users with secretary/super_admin role
+  try {
+    const admins = await getPool().query(
+      `SELECT email, name FROM admin_users WHERE role IN ('super_admin','competition_secretary') AND password_hash IS NOT NULL`,
+    )
+    const appUrl = process.env.APP_URL ?? 'https://shutterbug.wairarapacameraclub.org'
+    for (const admin of admins.rows) {
+      await sendEmail({
+        type: 'new_application',
+        to: admin.email,
+        toName: admin.name,
+        subject: `New membership application — ${first_name.trim()} ${last_name.trim()}`,
+        html: `<p>A new membership application has been received.</p>
+               <p><strong>Name:</strong> ${first_name.trim()} ${last_name.trim()}<br>
+               <strong>Email:</strong> ${email.trim()}<br>
+               <strong>Phone:</strong> ${phone?.trim() || '—'}<br>
+               <strong>Experience:</strong> ${experience_level || '—'}<br>
+               <strong>Payment method:</strong> ${payment_method || '—'}</p>
+               <p><a href="${appUrl}/applicants">View in Shutterbug →</a></p>`,
+      })
+    }
+  } catch (err) {
+    console.error('Failed to send new application notification', err)
+  }
+
+  res.status(201).json({ id: appId })
 })
 
 app.patch('/api/applicants/:id', async (req, res) => {

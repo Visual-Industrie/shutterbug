@@ -153,6 +153,7 @@ export async function deleteEntry(opts: {
   )
   if (compRes.rows[0]?.status !== 'open') return { error: 'Competition is no longer open' }
 
+  await pool.query(`DELETE FROM member_points WHERE entry_id = $1`, [entry.id])
   await pool.query(`DELETE FROM entries WHERE id = $1`, [entry.id])
   return { driveFileId: entry.drive_file_id, driveThumbnailUrl: entry.drive_thumbnail_url as string | null }
 }

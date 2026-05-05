@@ -132,7 +132,7 @@ export async function createEntry(opts: {
 export async function deleteEntry(opts: {
   tokenValue: string
   entryId: string
-}): Promise<{ driveFileId?: string | null } | { error: string }> {
+}): Promise<{ driveFileId?: string | null; driveThumbnailUrl?: string | null } | { error: string }> {
   const pool = getPool()
   const tok = await validateToken(opts.tokenValue, 'submission')
   if (!tok) return { error: 'Invalid or expired token' }

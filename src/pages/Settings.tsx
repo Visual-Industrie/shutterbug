@@ -274,6 +274,32 @@ export default function Settings() {
   const [subsResult, setSubsResult] = useState<{ sent: number; skipped: number; type: string } | null>(null)
   const [subsError, setSubsError] = useState<string | null>(null)
 
+  // Subs settings state
+  const [subsDraft, setSubsDraft] = useState<Record<string, string>>({})
+  const [subsSaved, setSubsSaved] = useState(false)
+
+  const { data: subsSettingsRows = [] } = useQuery<SettingRow[]>({
+    queryKey: ['settings', 'subs'],
+    queryFn: () => apiFetch<SettingRow[]>('/api/settings?section=SUBS'),
+  })
+
+  useEffect(() => {
+    if (subsSettingsRows.length > 0) {
+      const initial: Record<string, string> = {}
+      subsSettingsRows.forEach(r => { initial[r.key] = r.value ?? r.default_value ?? '' })
+      setSubsDraft(initial)
+    }
+  }, [subsSettingsRows])
+
+  const saveSubsSettingsMutation = useMutation({
+    mutationFn: (d: Record<string, string>) =>
+      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
+    onSuccess: () => {
+      setSubsSaved(true)
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    },
+  })
+
   // Grant Login modal
   const [grantTarget, setGrantTarget] = useState<CommitteeMember | null>(null)
   const [grantRole, setGrantRole] = useState('committee')
@@ -736,6 +762,44 @@ export default function Settings() {
       {/* ── Subscriptions tab ── */}
       {tab === 'subs' && (
         <div className="space-y-6">
+          {/* Subs settings */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Subscription settings</h2>
+            <p className="text-xs text-gray-400 mb-5">These values are used when converting applicants to members and for subscription reminders.</p>
+            <form onSubmit={e => { e.preventDefault(); setSubsSaved(false); saveSubsSettingsMutation.mutate(subsDraft) }} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Annual subscription amount ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={subsDraft['subs_amount'] ?? ''}
+                    onChange={e => { setSubsSaved(false); setSubsDraft(d => ({ ...d, subs_amount: e.target.value })) }}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="50.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Subscription due date</label>
+                  <input
+                    type="date"
+                    value={subsDraft['subs_due_date'] ?? ''}
+                    onChange={e => { setSubsSaved(false); setSubsDraft(d => ({ ...d, subs_due_date: e.target.value })) }}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                {subsSaved && <p className="text-sm text-green-600">Saved</p>}
+                {!subsSaved && <span />}
+                <button type="submit" disabled={saveSubsSettingsMutation.isPending} className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                  {saveSubsSettingsMutation.isPending ? 'Saving…' : 'Save settings'}
+                </button>
+              </div>
+            </form>
+          </div>
+
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-1">Annual subscription reminders</h2>
             <p className="text-xs text-gray-400 mb-5">Send reminder emails to all active members who have not yet paid their subscription. These are typically sent in mid-December and mid-January.</p>

@@ -915,11 +915,18 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
   )
   const ap = appRes.rows[0]
   if (!ap) return void res.status(404).json({ error: 'Applicant not found or already processed' })
-  const nextNumRes = await getPool().query(
-    `SELECT COALESCE(MAX(membership_number::integer), 0) + 1 AS next_number
-     FROM members WHERE membership_number ~ '^[0-9]+$'`,
-  )
+  const [nextNumRes, subsAmountRes] = await Promise.all([
+    getPool().query(
+      `SELECT COALESCE(MAX(membership_number::integer), 0) + 1 AS next_number
+       FROM members WHERE membership_number ~ '^[0-9]+$'`,
+    ),
+    getPool().query(
+      `SELECT value, default_value FROM settings WHERE key = 'subs_amount'`,
+    ),
+  ])
   const membershipNumber = String(nextNumRes.rows[0].next_number)
+  const subsAmountRow = subsAmountRes.rows[0]
+  const subsAmount = parseFloat(subsAmountRow?.value ?? subsAmountRow?.default_value ?? '50.00')
 
   const memberRes = await getPool().query(
     `INSERT INTO members (
@@ -928,7 +935,7 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
        privacy_act_ok,image_use_ok,club_rules_ok,joined_date
      ) VALUES ($1,$2,$3,$4,$5,'active','full',$6,true,CURRENT_DATE,$6,$7,$8,$9,CURRENT_DATE)
      RETURNING id`,
-    [ap.first_name, ap.last_name, ap.email, ap.phone, membershipNumber, ap.annual_sub_amount,
+    [ap.first_name, ap.last_name, ap.email, ap.phone, membershipNumber, subsAmount,
      ap.privacy_act_ok, ap.image_use_ok, ap.club_rules_ok],
   )
   await getPool().query(

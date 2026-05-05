@@ -1125,7 +1125,9 @@ app.get('/api/committee/members', async (req, res) => {
       SELECT cm.id, cm.starts_at, cm.ends_at, cm.notes, cm.member_id,
              m.first_name, m.last_name, m.email, m.membership_number,
              r.id AS role_id, r.name AS role_name, r.is_officer, r.sort_order,
-             (au.id IS NOT NULL) AS has_login
+             (au.id IS NOT NULL) AS has_login,
+             (au.id IS NOT NULL AND au.password_hash IS NULL) AS invite_pending,
+             au.role AS admin_role
       FROM committee_members cm
       JOIN committee_roles r ON r.id = cm.role_id
       LEFT JOIN members m ON m.id = cm.member_id

@@ -139,7 +139,7 @@ export async function deleteEntry(opts: {
 
   // Verify the entry belongs to this member/competition
   const res = await pool.query(
-    `SELECT id, drive_file_id FROM entries
+    `SELECT id, drive_file_id, drive_thumbnail_url FROM entries
      WHERE id = $1 AND competition_id = $2 AND member_id = $3`,
     [opts.entryId, tok.competition_id, tok.member_id],
   )
@@ -154,5 +154,5 @@ export async function deleteEntry(opts: {
   if (compRes.rows[0]?.status !== 'open') return { error: 'Competition is no longer open' }
 
   await pool.query(`DELETE FROM entries WHERE id = $1`, [entry.id])
-  return { driveFileId: entry.drive_file_id }
+  return { driveFileId: entry.drive_file_id, driveThumbnailUrl: entry.drive_thumbnail_url as string | null }
 }

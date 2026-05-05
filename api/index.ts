@@ -532,12 +532,14 @@ app.delete('/api/competitions/:id/entries/:entryId', async (req, res) => {
   if (!requireAuth(req, res)) return
   try {
     const result = await getPool().query(
-      `DELETE FROM entries WHERE id = $1 AND competition_id = $2 RETURNING drive_file_id`,
+      `DELETE FROM entries WHERE id = $1 AND competition_id = $2 RETURNING drive_file_id, drive_thumbnail_url`,
       [req.params.entryId, req.params.id],
     )
     if (!result.rows.length) return void res.status(404).json({ error: 'Entry not found' })
-    const driveFileId = result.rows[0].drive_file_id
+    const { drive_file_id: driveFileId, drive_thumbnail_url: thumbnailUrl } = result.rows[0]
     if (driveFileId) await deleteFromDrive(driveFileId)
+    const thumbId = thumbnailUrl ? new URL(thumbnailUrl).searchParams.get('id') : null
+    if (thumbId) await deleteFromDrive(thumbId)
     res.json({ ok: true })
   } catch (err) {
     res.status(500).json({ error: (err as Error).message })
@@ -1354,6 +1356,8 @@ app.delete('/api/submit/:token/entries', async (req, res) => {
   const result = await deleteEntry({ tokenValue: req.params.token, entryId })
   if ('error' in result) return void res.status(400).json(result)
   if (result.driveFileId) await deleteFromDrive(result.driveFileId)
+  const thumbId = result.driveThumbnailUrl ? new URL(result.driveThumbnailUrl).searchParams.get('id') : null
+  if (thumbId) await deleteFromDrive(thumbId)
   res.json({ ok: true })
 })
 

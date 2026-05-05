@@ -858,10 +858,15 @@ app.post('/api/applicants', async (req, res) => {
   )
   const appId = result.rows[0].id
 
-  // Notify admin users with secretary/super_admin role
+  // Notify current Secretary and Treasurer via committee_members
   try {
     const admins = await getPool().query(
-      `SELECT email, name FROM admin_users WHERE role IN ('super_admin','competition_secretary') AND password_hash IS NOT NULL`,
+      `SELECT m.email, m.first_name || ' ' || m.last_name AS name
+       FROM committee_members cm
+       JOIN committee_roles r ON r.id = cm.role_id
+       JOIN members m ON m.id = cm.member_id
+       WHERE LOWER(r.name) IN ('secretary', 'treasurer')
+         AND cm.ends_at IS NULL`,
     )
     const appUrl = process.env.APP_URL ?? 'https://shutterbug.wairarapacameraclub.org'
     for (const admin of admins.rows) {

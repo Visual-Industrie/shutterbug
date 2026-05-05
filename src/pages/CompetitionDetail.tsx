@@ -611,22 +611,22 @@ export default function CompetitionDetail() {
             ) : (
               <div className="text-xs text-red-500">No judge assigned</div>
             )}
-            {judgingTokenData?.token && (
-              <div className="mt-3 space-y-1.5">
+            <div className="mt-3 space-y-1.5">
+              {judgingTokenData?.token && (
                 <Link
                   to={`/judge/${judgingTokenData.token}`}
                   className="block text-center text-xs px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
                 >
                   Open judge portal →
                 </Link>
-                <Link
-                  to={`/judge/${judgingTokenData.token}/reference`}
-                  className="block text-center text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-amber-700 hover:border-amber-300 transition-colors"
-                >
-                  Open reference view →
-                </Link>
-              </div>
-            )}
+              )}
+              <Link
+                to={`/competitions/${id}/reference`}
+                className="block text-center text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-amber-700 hover:border-amber-300 transition-colors"
+              >
+                View reference →
+              </Link>
+            </div>
           </div>
 
           {/* Download entries */}

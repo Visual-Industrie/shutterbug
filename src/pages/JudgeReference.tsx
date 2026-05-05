@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { apiFetch } from '@/lib/api'
 
 interface Competition {
   id: string
@@ -54,7 +55,8 @@ function fmt(d: string | null) {
 }
 
 export default function JudgeReference() {
-  const { token } = useParams<{ token: string }>()
+  const { token, id } = useParams<{ token?: string; id?: string }>()
+  const isAdmin = !!id
   const [data, setData] = useState<PageData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -72,20 +74,27 @@ export default function JudgeReference() {
   }, [lightbox, closeLightbox])
 
   async function load() {
-    const res = await fetch(`/api/judge/${token}/reference`)
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}))
-      setError(j.error ?? 'Invalid or expired judging link')
+    try {
+      const d: PageData = isAdmin
+        ? await apiFetch<PageData>(`/api/competitions/${id}/reference`)
+        : await (async () => {
+            const res = await fetch(`/api/judge/${token}/reference`)
+            if (!res.ok) {
+              const j = await res.json().catch(() => ({}))
+              throw new Error(j.error ?? 'Invalid or expired judging link')
+            }
+            return res.json() as Promise<PageData>
+          })()
+      setData(d)
+      setEntries(d.entries)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
       setLoading(false)
-      return
     }
-    const d: PageData = await res.json()
-    setData(d)
-    setEntries(d.entries)
-    setLoading(false)
   }
 
-  useEffect(() => { load() }, [token])
+  useEffect(() => { load() }, [token, id])
 
   async function move(index: number, direction: 'up' | 'down') {
     const newEntries = [...entries]
@@ -249,12 +258,21 @@ export default function JudgeReference() {
             >
               Print
             </button>
-            <Link
-              to={`/judge/${token}`}
-              className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
-            >
-              ← Back to scoring
-            </Link>
+            {isAdmin ? (
+              <Link
+                to={`/competitions/${id}`}
+                className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+              >
+                ← Back to competition
+              </Link>
+            ) : (
+              <Link
+                to={`/judge/${token}`}
+                className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+              >
+                ← Back to scoring
+              </Link>
+            )}
           </div>
         </div>
       </header>

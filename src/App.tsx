@@ -47,6 +47,9 @@ export default function App() {
           <Route path="/judge/:token/reference" element={<JudgeReference />} />
           <Route path="/history/:token" element={<History />} />
 
+          {/* Admin reference view (JWT auth via API, no layout so it's printable) */}
+          <Route path="/competitions/:id/reference" element={<JudgeReference />} />
+
           {/* Admin — protected + Layout */}
           <Route
             element={

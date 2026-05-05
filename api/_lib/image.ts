@@ -13,7 +13,7 @@ const THUMBNAIL_LONG_EDGE = 500
 export async function processImage(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer)
     .resize(MAX_LONG_EDGE, MAX_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 90 })
+    .jpeg({ quality: 95 })
     .withMetadata({})
     .toBuffer()
 }

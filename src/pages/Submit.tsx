@@ -36,7 +36,9 @@ interface PageData {
 
 const TYPE_LABEL: Record<string, string> = { projim: 'PROJIM', printim: 'PRINTIM' }
 
-const VERCEL_BODY_LIMIT = 4 * 1024 * 1024 // 4MB
+// bodyParser is disabled on the server so Vercel streams the raw body (no 4.5MB cap).
+// Only compress if the file is truly enormous — most camera JPEGs will pass through untouched.
+const VERCEL_BODY_LIMIT = 50 * 1024 * 1024 // 50MB
 
 // Only compresses if the file exceeds Vercel's body limit.
 // The server re-processes with Sharp regardless; this is just for transport.

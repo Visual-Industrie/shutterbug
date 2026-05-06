@@ -26,7 +26,9 @@ export async function sendSubmissionInvites(competitionId: string): Promise<{
   // Active members with real emails only
   const membersRes = await getPool().query(
     `SELECT id, first_name, last_name, email FROM members
-     WHERE status = 'active' AND email NOT LIKE '%@privacy.wcc.local'
+     WHERE status = 'active'
+       AND (membership_type = 'life' OR subs_paid = true)
+       AND email NOT LIKE '%@privacy.wcc.local'
      ORDER BY last_name, first_name`,
   )
 
@@ -79,7 +81,9 @@ export async function sendSubmissionReminders(competitionId: string): Promise<{
 
   const membersRes = await getPool().query(
     `SELECT id, first_name, last_name, email FROM members
-     WHERE status = 'active' AND email NOT LIKE '%@privacy.wcc.local'
+     WHERE status = 'active'
+       AND (membership_type = 'life' OR subs_paid = true)
+       AND email NOT LIKE '%@privacy.wcc.local'
      ORDER BY last_name, first_name`,
   )
 
@@ -139,7 +143,9 @@ export async function sendDeadlineReminders(competitionId: string): Promise<{
 
   const membersRes = await getPool().query(
     `SELECT id, first_name, last_name, email FROM members
-     WHERE status = 'active' AND email NOT LIKE '%@privacy.wcc.local'
+     WHERE status = 'active'
+       AND (membership_type = 'life' OR subs_paid = true)
+       AND email NOT LIKE '%@privacy.wcc.local'
      ORDER BY last_name, first_name`,
   )
 

@@ -407,32 +407,30 @@ export default function CompetitionDetail() {
           body: JSON.stringify({ title: entryTitle, type: entryType }),
         })
       } else {
-        let driveFileId: string | null = null
-
         if (entryFile) {
-          // Step 1: get Drive resumable upload session
-          const sessionRes = await apiFetch<{ uploadUrl: string | null }>(`/api/competitions/${id}/entries/session`, {
+          // Single multipart request: server processes + uploads to Drive
+          const token = localStorage.getItem('sb_admin_token')
+          const form = new FormData()
+          form.append('memberId', entryMemberId)
+          form.append('type', entryType)
+          form.append('title', entryTitle)
+          form.append('file', entryFile)
+          const uploadRes = await fetch(`/api/competitions/${id}/entries/upload`, {
             method: 'POST',
-            body: JSON.stringify({ memberId: entryMemberId, type: entryType, title: entryTitle }),
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: form,
           })
-          if (sessionRes.uploadUrl) {
-            // Step 2: upload file directly to Drive
-            const uploadRes = await fetch(sessionRes.uploadUrl, {
-              method: 'PUT',
-              headers: { 'Content-Type': entryFile.type || 'image/jpeg' },
-              body: entryFile,
-            })
-            if (!uploadRes.ok) throw new Error('Image upload to Drive failed')
-            const uploadJson = await uploadRes.json().catch(() => null)
-            driveFileId = uploadJson?.id ?? null
+          if (!uploadRes.ok) {
+            const j = await uploadRes.json().catch(() => ({}))
+            throw new Error(j.error ?? 'Upload failed')
           }
+        } else {
+          // No file — just save the entry record
+          await apiFetch(`/api/competitions/${id}/entries`, {
+            method: 'POST',
+            body: JSON.stringify({ memberId: entryMemberId, type: entryType, title: entryTitle, driveFileId: null }),
+          })
         }
-
-        // Step 3: finalize — process image + save entry
-        await apiFetch(`/api/competitions/${id}/entries`, {
-          method: 'POST',
-          body: JSON.stringify({ memberId: entryMemberId, type: entryType, title: entryTitle, driveFileId }),
-        })
       }
       setShowAddEntry(false)
       refetchEntries()

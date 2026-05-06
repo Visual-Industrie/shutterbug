@@ -456,6 +456,74 @@ app.post('/api/competitions/:id/entries/session', async (req, res) => {
   }
 })
 
+// Admin multipart upload: browser sends file → server processes + uploads to Drive + saves entry
+app.post('/api/competitions/:id/entries/upload', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  let parsed: import('./_lib/parse-upload.js').ParsedUpload
+  try {
+    parsed = await parseUpload(req)
+  } catch {
+    return void res.status(400).json({ error: 'Failed to parse upload' })
+  }
+
+  const { memberId, type: rawType, title } = parsed.fields
+  const type = rawType as 'projim' | 'printim'
+  if (!memberId) return void res.status(400).json({ error: 'memberId is required' })
+  if (!type || !['projim', 'printim'].includes(type)) return void res.status(400).json({ error: 'type must be projim or printim' })
+  if (!title?.trim()) return void res.status(400).json({ error: 'Title is required' })
+  if (!parsed.file) return void res.status(400).json({ error: 'Image file is required' })
+
+  const pool = getPool()
+  const compRes = await pool.query(
+    `SELECT id, name, max_projim_entries, max_printim_entries, judging_closes_at FROM competitions WHERE id = $1`,
+    [req.params.id],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+  const memberRes = await pool.query(`SELECT id, membership_number FROM members WHERE id = $1`, [memberId])
+  if (!memberRes.rows[0]) return void res.status(404).json({ error: 'Member not found' })
+  const member = memberRes.rows[0]
+
+  const countRes = await pool.query(
+    `SELECT type, COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2 GROUP BY type`,
+    [req.params.id, memberId],
+  )
+  const counts = Object.fromEntries(countRes.rows.map((r: { type: string; cnt: string }) => [r.type, parseInt(r.cnt, 10)]))
+  if (type === 'projim' && (counts.projim ?? 0) >= comp.max_projim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_projim_entries} PROJIM entries` })
+  }
+  if (type === 'printim' && (counts.printim ?? 0) >= comp.max_printim_entries) {
+    return void res.status(400).json({ error: `This member already has ${comp.max_printim_entries} PRINTIM entries` })
+  }
+
+  try {
+    const processedBuffer = await processImage(parsed.file.buffer)
+    const thumbnailBuffer = await generateThumbnail(processedBuffer)
+    const filename = buildEntryFilename({ type, title, membershipNumber: member.membership_number, originalFilename: parsed.file.filename })
+    const driveResult = await uploadToDrive({
+      buffer: processedBuffer,
+      thumbnailBuffer,
+      filename,
+      mimeType: 'image/jpeg',
+      competitionId: comp.id,
+      competitionName: comp.name,
+      judgingClosesAt: comp.judging_closes_at,
+    })
+
+    const insertRes = await pool.query(
+      `INSERT INTO entries (competition_id, member_id, type, title, drive_file_id, drive_file_url, drive_thumbnail_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [req.params.id, memberId, type, title.trim(),
+       driveResult?.driveFileId ?? null, driveResult?.driveFileUrl ?? null, driveResult?.driveThumbnailUrl ?? null],
+    )
+    res.status(201).json({ id: insertRes.rows[0].id })
+  } catch (err) {
+    console.error('Admin upload failed', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Upload failed' })
+  }
+})
+
 // Step 2: finalize admin entry — process image, save to DB
 app.post('/api/competitions/:id/entries', async (req, res) => {
   if (!requireAuth(req, res)) return

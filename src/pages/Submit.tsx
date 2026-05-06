@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { compressImage } from '@/lib/image'
 
 interface Competition {
   id: string
@@ -35,46 +36,6 @@ interface PageData {
 }
 
 const TYPE_LABEL: Record<string, string> = { projim: 'PROJIM', printim: 'PRINTIM' }
-
-// bodyParser is disabled on the server so Vercel streams the raw body (no 4.5MB cap).
-// Only compress if the file is truly enormous — most camera JPEGs will pass through untouched.
-const VERCEL_BODY_LIMIT = 50 * 1024 * 1024 // 50MB
-
-// Only compresses if the file exceeds Vercel's body limit.
-// The server re-processes with Sharp regardless; this is just for transport.
-async function compressImage(file: File): Promise<Blob> {
-  if (file.size <= VERCEL_BODY_LIMIT) return file
-
-  return new Promise((resolve) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      const canvas = document.createElement('canvas')
-      let { width, height } = img
-      const MAX_DIM = 2400
-      if (width > MAX_DIM || height > MAX_DIM) {
-        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
-        width = Math.round(width * ratio)
-        height = Math.round(height * ratio)
-      }
-      canvas.width = width
-      canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-
-      const tryQuality = (q: number) => {
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return }
-          if (blob.size <= VERCEL_BODY_LIMIT || q <= 0.5) resolve(blob)
-          else tryQuality(Math.round((q - 0.1) * 10) / 10)
-        }, 'image/jpeg', q)
-      }
-      tryQuality(0.85)
-    }
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-    img.src = url
-  })
-}
 
 function fmt(d: string | null) {
   if (!d) return ''

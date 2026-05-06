@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
+import { compressImage } from '@/lib/image'
 
 interface CompDetail {
   id: string
@@ -410,11 +411,12 @@ export default function CompetitionDetail() {
         if (entryFile) {
           // Single multipart request: server processes + uploads to Drive
           const token = localStorage.getItem('sb_admin_token')
+          const compressed = await compressImage(entryFile)
           const form = new FormData()
           form.append('memberId', entryMemberId)
           form.append('type', entryType)
           form.append('title', entryTitle)
-          form.append('file', entryFile)
+          form.append('file', compressed, entryFile.name)
           const uploadRes = await fetch(`/api/competitions/${id}/entries/upload`, {
             method: 'POST',
             headers: token ? { Authorization: `Bearer ${token}` } : {},

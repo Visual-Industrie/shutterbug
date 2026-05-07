@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { apiFetch } from '@/lib/api'
 
 interface Kpis {
   noJudgeCount: number
@@ -114,7 +115,7 @@ export default function Dashboard() {
       ] = await Promise.all([
         supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('members').select('*', { count: 'exact', head: true }).eq('membership_type', 'life').eq('status', 'active'),
-        supabase.from('admin_users').select('*', { count: 'exact', head: true }),
+        apiFetch<{ count: number }>('/api/admin-users/count'),
         supabase.from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('judges').select('*', { count: 'exact', head: true }).eq('is_available', true),
         supabase.from('entries').select('member_id').gte('submitted_at', new Date(Date.now() - 90 * 864e5).toISOString()),

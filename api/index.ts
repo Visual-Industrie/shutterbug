@@ -1131,6 +1131,12 @@ function requireSuperAdmin(req: express.Request, res: express.Response): boolean
   }
 }
 
+app.get('/api/admin-users/count', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(`SELECT COUNT(*) AS count FROM admin_users`)
+  res.json({ count: parseInt(result.rows[0].count, 10) })
+})
+
 app.get('/api/settings', async (req, res) => {
   if (!requireAuth(req, res)) return
   const section = req.query.section as string | undefined

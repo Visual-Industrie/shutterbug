@@ -56,6 +56,38 @@ export default function Submit() {
   const [uploadStatus, setUploadStatus] = useState('')
   const [uploadMsg, setUploadMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+
+  async function validateFile(f: File): Promise<string | null> {
+    if (f.size > 4 * 1024 * 1024) {
+      return `File is ${(f.size / 1024 / 1024).toFixed(1)} MB — maximum allowed is 4 MB`
+    }
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(f)
+      const img = new Image()
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const longest = Math.max(img.naturalWidth, img.naturalHeight)
+        if (longest > 1920) {
+          resolve(`Image is ${img.naturalWidth}×${img.naturalHeight}px — longest edge must be 1920px or less`)
+        } else {
+          resolve(null)
+        }
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve('Could not read image — please try another file') }
+      img.src = url
+    })
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null
+    setFile(f)
+    setFileError(null)
+    if (f) {
+      const err = await validateFile(f)
+      setFileError(err)
+    }
+  }
 
   async function load() {
     const res = await fetch(`/api/submit/${token}`)
@@ -78,6 +110,7 @@ export default function Submit() {
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim()) { setUploadMsg({ text: 'Please enter a title', ok: false }); return }
+    if (fileError) return
     setUploading(true)
     setUploadMsg(null)
 
@@ -86,6 +119,9 @@ export default function Submit() {
         setUploadMsg({ text: 'Please select an image', ok: false })
         return
       }
+
+      const validationErr = await validateFile(file)
+      if (validationErr) { setFileError(validationErr); setUploading(false); return }
 
       setUploadStatus('Preparing image…')
       const compressed = await compressImage(file)
@@ -106,6 +142,7 @@ export default function Submit() {
       setUploadMsg({ text: 'Entry submitted!', ok: true })
       setTitle('')
       setFile(null)
+      setFileError(null)
       if (fileRef.current) fileRef.current.value = ''
       await load()
     } catch {
@@ -276,20 +313,25 @@ export default function Submit() {
               {/* File */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                  Image file <span className="text-gray-400">(JPEG or PNG, max 50 MB)</span>
+                  Image file <span className="text-gray-400">(JPEG or PNG, max 4 MB, longest edge max 1920px)</span>
                 </label>
                 <input
                   ref={fileRef}
                   type="file"
                   accept="image/jpeg,image/png,image/jpg"
-                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                  onChange={handleFileChange}
                   className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100"
                 />
+                {fileError && (
+                  <p className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    {fileError}
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
-                disabled={uploading}
+                disabled={uploading || !!fileError}
                 className="w-full py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
               >
                 {uploading ? (uploadStatus || 'Uploading…') : 'Submit entry'}

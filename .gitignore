@@ -33,6 +33,11 @@ oauth-credentials.json
 # Temp
 *.tmp
 /tmp/xlvenv/
+.playwright-mcp/
+judging-updates.md
+wordpress-integration.md
+scripts/check-points-integrity.ts
+scripts/cleanup-orphan-points.ts
 
 # Source reference material (screenshots, xlsx imports)
 screenshots from Click/

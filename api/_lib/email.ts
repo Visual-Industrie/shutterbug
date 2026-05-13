@@ -4,7 +4,22 @@ import { getPool } from './db.js'
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = 'Wairarapa Camera Club <noreply@wairarapacameraclub.org>'
 
-const EMAIL_FOOTER = `<p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;">Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com" style="color:#9ca3af;">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>`
+const DEFAULT_FOOTER_TEXT = `Do not reply to this email. To contact the Competition Secretary, use compsecwaicamc@gmail.com. All other committee email addresses are on our website.`
+
+function buildFooterHtml(text: string): string {
+  return `<p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;">${htmlEsc(text).replace('compsecwaicamc@gmail.com', '<a href="mailto:compsecwaicamc@gmail.com" style="color:#9ca3af;">compsecwaicamc@gmail.com</a>')}</p>`
+}
+
+async function getFooterHtml(): Promise<string> {
+  try {
+    const res = await getPool().query(`SELECT value, default_value FROM settings WHERE key = 'email_footer'`)
+    const row = res.rows[0]
+    const text = row?.value ?? row?.default_value ?? DEFAULT_FOOTER_TEXT
+    return buildFooterHtml(text)
+  } catch {
+    return buildFooterHtml(DEFAULT_FOOTER_TEXT)
+  }
+}
 
 export interface SendEmailOptions {
   type: string
@@ -25,7 +40,7 @@ export interface SendEmailOptions {
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   let error: string | null = null
 
-  const html = opts.html + EMAIL_FOOTER
+  const html = opts.html + await getFooterHtml()
 
   if (resend) {
     const result = await resend.emails.send({

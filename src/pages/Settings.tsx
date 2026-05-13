@@ -56,6 +56,7 @@ const TABS = [
   { id: 'comp',         label: 'Competition Defaults', roles: null },
   { id: 'committee',    label: 'Committee',            roles: null },
   { id: 'subs',         label: 'Subscriptions',        roles: null },
+  { id: 'email',        label: 'Email',                roles: null },
   { id: 'integrations', label: 'Integrations',         roles: ['super_admin', 'competition_secretary', 'president'] },
 ]
 
@@ -296,6 +297,32 @@ export default function Settings() {
       apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
     onSuccess: () => {
       setSubsSaved(true)
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    },
+  })
+
+  // Email settings state
+  const [emailDraft, setEmailDraft] = useState<Record<string, string>>({})
+  const [emailSaved, setEmailSaved] = useState(false)
+
+  const { data: emailSettingsRows = [] } = useQuery<SettingRow[]>({
+    queryKey: ['settings', 'email'],
+    queryFn: () => apiFetch<SettingRow[]>('/api/settings?section=EMAIL'),
+  })
+
+  useEffect(() => {
+    if (emailSettingsRows.length > 0) {
+      const initial: Record<string, string> = {}
+      emailSettingsRows.forEach(r => { initial[r.key] = r.value ?? r.default_value ?? '' })
+      setEmailDraft(initial)
+    }
+  }, [emailSettingsRows])
+
+  const saveEmailSettingsMutation = useMutation({
+    mutationFn: (d: Record<string, string>) =>
+      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
+    onSuccess: () => {
+      setEmailSaved(true)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
   })
@@ -848,6 +875,36 @@ export default function Settings() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
             <p className="font-medium mb-1">Automated scheduling</p>
             <p>These reminders can also run automatically via GitHub Actions on Dec 13 and Jan 13. See <code>.github/workflows/subs-reminders.yml</code> — requires <code>APP_URL</code> and <code>CRON_SECRET</code> secrets.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Email tab ── */}
+      {tab === 'email' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Email footer</h2>
+            <p className="text-xs text-gray-400 mb-5">This text is appended to every email the system sends.</p>
+            <form onSubmit={e => { e.preventDefault(); setEmailSaved(false); saveEmailSettingsMutation.mutate(emailDraft) }} className="space-y-4">
+              <textarea
+                rows={3}
+                value={emailDraft['email_footer'] ?? ''}
+                onChange={e => { setEmailSaved(false); setEmailDraft(d => ({ ...d, email_footer: e.target.value })) }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              {emailDraft['email_footer'] && (
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs text-gray-400 mb-1">Preview</p>
+                  <p className="text-xs text-gray-400 border-t border-gray-200 pt-3">{emailDraft['email_footer']}</p>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                {emailSaved ? <p className="text-sm text-green-600">Saved</p> : <span />}
+                <button type="submit" disabled={saveEmailSettingsMutation.isPending} className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                  {saveEmailSettingsMutation.isPending ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

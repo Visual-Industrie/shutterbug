@@ -204,28 +204,27 @@ function GoogleDrivePanel() {
 
 // ── Email footer editor ───────────────────────────────────────────────────────
 
-function EmailFooterEditor({ initialHtml, onSave, saving, saved }: {
-  initialHtml: string
-  onSave: (html: string) => void
-  saving: boolean
-  saved: boolean
-}) {
+function EmailFooterInner({ initialHtml }: { initialHtml: string }) {
+  const queryClient = useQueryClient()
+  const [saved, setSaved] = useState(false)
+
+  const saveMutation = useMutation({
+    mutationFn: (d: Record<string, string>) =>
+      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
+    onSuccess: () => {
+      setSaved(true)
+      queryClient.invalidateQueries({ queryKey: ['settings', 'email'] })
+    },
+  })
+
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Link.configure({ openOnClick: false }),
-    ],
+    extensions: [StarterKit, Link.configure({ openOnClick: false })],
     content: initialHtml,
     editorProps: {
       attributes: { class: 'prose prose-sm max-w-none min-h-[80px] focus:outline-none px-4 py-3 text-sm text-gray-700' },
     },
+    onUpdate: () => setSaved(false),
   })
-
-  useEffect(() => {
-    if (editor && initialHtml && editor.getHTML() !== initialHtml) {
-      editor.commands.setContent(initialHtml, false)
-    }
-  }, [initialHtml])
 
   function addLink() {
     const url = window.prompt('URL')
@@ -249,18 +248,33 @@ function EmailFooterEditor({ initialHtml, onSave, saving, saved }: {
       <div className="border border-gray-300 rounded-b-lg border-t-0 bg-white">
         <EditorContent editor={editor} />
       </div>
+      {saveMutation.error && <p className="mt-2 text-sm text-red-600">{(saveMutation.error as Error).message}</p>}
       <div className="flex items-center justify-between mt-4">
         {saved ? <p className="text-sm text-green-600">Saved</p> : <span />}
         <button
-          onClick={() => editor && onSave(editor.getHTML())}
-          disabled={saving}
+          onClick={() => editor && saveMutation.mutate({ email_footer: editor.getHTML() })}
+          disabled={saveMutation.isPending}
           className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saveMutation.isPending ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
   )
+}
+
+function EmailFooterEditor() {
+  const { data: rows, isLoading } = useQuery<SettingRow[]>({
+    queryKey: ['settings', 'email'],
+    queryFn: () => apiFetch<SettingRow[]>('/api/settings?section=EMAIL'),
+  })
+
+  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>
+
+  const row = rows?.find(r => r.key === 'email_footer')
+  const initialHtml = row?.value ?? row?.default_value ?? ''
+
+  return <EmailFooterInner key={initialHtml} initialHtml={initialHtml} />
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -361,32 +375,6 @@ export default function Settings() {
       apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
     onSuccess: () => {
       setSubsSaved(true)
-      queryClient.invalidateQueries({ queryKey: ['settings'] })
-    },
-  })
-
-  // Email settings state
-  const [emailDraft, setEmailDraft] = useState<Record<string, string>>({})
-  const [emailSaved, setEmailSaved] = useState(false)
-
-  const { data: emailSettingsRows = [] } = useQuery<SettingRow[]>({
-    queryKey: ['settings', 'email'],
-    queryFn: () => apiFetch<SettingRow[]>('/api/settings?section=EMAIL'),
-  })
-
-  useEffect(() => {
-    if (emailSettingsRows.length > 0) {
-      const initial: Record<string, string> = {}
-      emailSettingsRows.forEach(r => { initial[r.key] = r.value ?? r.default_value ?? '' })
-      setEmailDraft(initial)
-    }
-  }, [emailSettingsRows])
-
-  const saveEmailSettingsMutation = useMutation({
-    mutationFn: (d: Record<string, string>) =>
-      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
-    onSuccess: () => {
-      setEmailSaved(true)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
   })
@@ -944,14 +932,7 @@ export default function Settings() {
       )}
 
       {/* ── Email tab ── */}
-      {tab === 'email' && (
-        <EmailFooterEditor
-          initialHtml={emailDraft['email_footer'] ?? ''}
-          onSave={html => { setEmailDraft(d => ({ ...d, email_footer: html })); saveEmailSettingsMutation.mutate({ ...emailDraft, email_footer: html }) }}
-          saving={saveEmailSettingsMutation.isPending}
-          saved={emailSaved}
-        />
-      )}
+      {tab === 'email' && <EmailFooterEditor />}
 
       {/* ── Grant Login modal ── */}
       {grantTarget && (

@@ -623,11 +623,13 @@ export default function Settings() {
                           <td className="py-2.5 pr-4 text-gray-400 text-xs max-w-[12rem] truncate">{m.notes ?? ''}</td>
                           <td className="py-2.5 text-right whitespace-nowrap">
                             {m.member_id && (
-                              m.invite_pending
-                                ? <button onClick={() => { setGrantError(null); setGrantSuccess(null); grantLoginMutation.mutate({ member_id: m.member_id!, admin_role: m.admin_role ?? 'committee' }) }} disabled={grantLoginMutation.isPending} className="text-xs text-amber-600 hover:text-amber-800 transition-colors mr-3 disabled:opacity-50">Resend invite</button>
-                                : m.has_login
-                                  ? <span className="text-xs text-green-600 mr-3">✓ Has login</span>
-                                  : <button onClick={() => openGrantLogin(m)} className="text-xs text-blue-500 hover:text-blue-700 transition-colors mr-3">Grant Login</button>
+                              m.has_login || m.invite_pending
+                                ? <span className="inline-flex items-center gap-2 mr-3">
+                                    {m.has_login && !m.invite_pending && <span className="text-xs text-green-600">✓ Has login</span>}
+                                    {m.invite_pending && <span className="text-xs text-amber-600">Invite pending</span>}
+                                    <button onClick={() => { setGrantError(null); setGrantSuccess(null); grantLoginMutation.mutate({ member_id: m.member_id!, admin_role: m.admin_role ?? 'committee' }) }} disabled={grantLoginMutation.isPending} className="text-xs text-gray-400 hover:text-amber-600 transition-colors disabled:opacity-50">Resend invite</button>
+                                  </span>
+                                : <button onClick={() => openGrantLogin(m)} className="text-xs text-blue-500 hover:text-blue-700 transition-colors mr-3">Grant Login</button>
                             )}
                             <button onClick={() => openEdit(m)} className="text-xs text-gray-400 hover:text-amber-700 transition-colors mr-3">Edit</button>
                             <button onClick={() => endToday(m)} className="text-xs text-gray-400 hover:text-orange-600 transition-colors mr-3">End</button>

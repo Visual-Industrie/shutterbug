@@ -136,13 +136,14 @@ app.post('/api/auth/invite', async (req, res) => {
 
     // Upsert admin_users row
     await getPool().query(
-      `INSERT INTO admin_users (email, name, role, member_id, invite_token, invite_expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO admin_users (email, name, role, member_id, invite_token, invite_expires_at, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL)
        ON CONFLICT (email) DO UPDATE SET
          role = EXCLUDED.role,
          member_id = EXCLUDED.member_id,
          invite_token = EXCLUDED.invite_token,
-         invite_expires_at = EXCLUDED.invite_expires_at`,
+         invite_expires_at = EXCLUDED.invite_expires_at,
+         password_hash = NULL`,
       [member.email, name, admin_role, member_id, inviteToken, inviteExpiresAt],
     )
 

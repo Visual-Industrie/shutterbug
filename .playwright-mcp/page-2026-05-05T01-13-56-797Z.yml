@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e25]:
+      - generic [ref=e39]:
+        - img [ref=e689]
+        - heading "Closed Facebook group" [level=2] [ref=e701]
+        - paragraph [ref=e713]: The Club maintains a private Facebook group called 'WCC Out and About'. It is a great place to share images, tips and ideas, and ask for advice or feedback about anything related to photography. This is a closed group available only to members and you need to have an existing Facebook account to be able to access it. If you would like access to the group, answer the next question.
+        - generic [ref=e719]: Facebook group access
+        - generic [ref=e724]:
+          - paragraph [ref=e733]: I want an invite *
+          - radiogroup "I want an invite" [ref=e736]:
+            - radio "Yes" [ref=e737] [cursor=pointer]:
+              - generic [ref=e743]: "Yes"
+            - radio "No" [checked] [ref=e744] [cursor=pointer]:
+              - generic [ref=e750]: "No"
+          - alert [ref=e751]:
+            - img [ref=e753]
+            - generic [ref=e755]: "I want an invite:"
+        - generic [ref=e760]:
+          - button "← Back" [ref=e762] [cursor=pointer]:
+            - generic [ref=e765]: ← Back
+          - button "Next →" [ref=e767] [cursor=pointer]:
+            - generic [ref=e770]: Next →
+      - link "Made with" [ref=e248] [cursor=pointer]:
+        - /url: https://www.fillout.com/discover?utm_source=fillout-powered-by&utm_medium=website&utm_campaign=7SEi2kfbEzus
+        - generic [ref=e249]:
+          - generic [ref=e250]: Made with
+          - img [ref=e252]
+        - img [ref=e262]
+    - region "Notifications alt+T"
+    - region "Notifications alt+T"
+  - alert [ref=e269]
+  - status [ref=e270]
+  - status [ref=e771]

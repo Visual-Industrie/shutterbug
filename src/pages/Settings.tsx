@@ -4,6 +4,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { apiFetch } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 import { Navigate } from 'react-router-dom'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -194,6 +197,67 @@ function GoogleDrivePanel() {
         <p className="text-xs text-gray-400 mt-4">
           After connecting, add <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/integrations/google/callback</code> as an authorised redirect URI in Google Cloud Console.
         </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Email footer editor ───────────────────────────────────────────────────────
+
+function EmailFooterEditor({ initialHtml, onSave, saving, saved }: {
+  initialHtml: string
+  onSave: (html: string) => void
+  saving: boolean
+  saved: boolean
+}) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Link.configure({ openOnClick: false }),
+    ],
+    content: initialHtml,
+    editorProps: {
+      attributes: { class: 'prose prose-sm max-w-none min-h-[80px] focus:outline-none px-4 py-3 text-sm text-gray-700' },
+    },
+  })
+
+  useEffect(() => {
+    if (editor && initialHtml && editor.getHTML() !== initialHtml) {
+      editor.commands.setContent(initialHtml, false)
+    }
+  }, [initialHtml])
+
+  function addLink() {
+    const url = window.prompt('URL')
+    if (!url) return
+    editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">Email footer</h2>
+      <p className="text-xs text-gray-400 mb-4">Appended to every email the system sends.</p>
+      <div className="flex gap-1 flex-wrap border border-gray-200 rounded-t-lg px-2 py-1.5 bg-gray-50">
+        <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`px-2 py-0.5 text-xs rounded font-bold ${editor?.isActive('bold') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>B</button>
+        <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`px-2 py-0.5 text-xs rounded italic ${editor?.isActive('italic') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>I</button>
+        <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`px-2 py-0.5 text-xs rounded ${editor?.isActive('bulletList') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>• List</button>
+        <button type="button" onClick={addLink} className={`px-2 py-0.5 text-xs rounded ${editor?.isActive('link') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>Link</button>
+        {editor?.isActive('link') && (
+          <button type="button" onClick={() => editor.chain().focus().unsetLink().run()} className="px-2 py-0.5 text-xs rounded hover:bg-gray-200 text-gray-400">Remove link</button>
+        )}
+      </div>
+      <div className="border border-gray-300 rounded-b-lg border-t-0 bg-white">
+        <EditorContent editor={editor} />
+      </div>
+      <div className="flex items-center justify-between mt-4">
+        {saved ? <p className="text-sm text-green-600">Saved</p> : <span />}
+        <button
+          onClick={() => editor && onSave(editor.getHTML())}
+          disabled={saving}
+          className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       </div>
     </div>
   )
@@ -881,32 +945,12 @@ export default function Settings() {
 
       {/* ── Email tab ── */}
       {tab === 'email' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-700 mb-1">Email footer</h2>
-            <p className="text-xs text-gray-400 mb-5">This text is appended to every email the system sends.</p>
-            <form onSubmit={e => { e.preventDefault(); setEmailSaved(false); saveEmailSettingsMutation.mutate(emailDraft) }} className="space-y-4">
-              <textarea
-                rows={3}
-                value={emailDraft['email_footer'] ?? ''}
-                onChange={e => { setEmailSaved(false); setEmailDraft(d => ({ ...d, email_footer: e.target.value })) }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              {emailDraft['email_footer'] && (
-                <div className="border-t border-gray-100 pt-3">
-                  <p className="text-xs text-gray-400 mb-1">Preview</p>
-                  <p className="text-xs text-gray-400 border-t border-gray-200 pt-3">{emailDraft['email_footer']}</p>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                {emailSaved ? <p className="text-sm text-green-600">Saved</p> : <span />}
-                <button type="submit" disabled={saveEmailSettingsMutation.isPending} className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                  {saveEmailSettingsMutation.isPending ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EmailFooterEditor
+          initialHtml={emailDraft['email_footer'] ?? ''}
+          onSave={html => { setEmailDraft(d => ({ ...d, email_footer: html })); saveEmailSettingsMutation.mutate({ ...emailDraft, email_footer: html }) }}
+          saving={saveEmailSettingsMutation.isPending}
+          saved={emailSaved}
+        />
       )}
 
       {/* ── Grant Login modal ── */}

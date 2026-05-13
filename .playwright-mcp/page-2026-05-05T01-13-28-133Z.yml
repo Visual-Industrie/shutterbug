@@ -1,0 +1,63 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e25]:
+      - generic [ref=e39]:
+        - img [ref=e286]
+        - heading "Privacy rights" [level=2] [ref=e298]
+        - generic [ref=e309]:
+          - paragraph [ref=e310]:
+            - strong [ref=e311]: What are your rights and the Club's obligations to you?
+          - paragraph [ref=e312]
+          - paragraph [ref=e313]: The Wairarapa Camera Club has safeguards to protect information about you and to prevent it being lost, being accessed, used, changed or released without the Club's permission or being misused in any other way.
+          - paragraph [ref=e314]
+          - paragraph [ref=e315]: From time to time, Club officers may share your email and/or phone details with other members. The Club will only do this when it enables the effective running of a Club activity. In other situations the Club will not share your address details with other members without your permission.
+          - paragraph [ref=e316]
+          - paragraph [ref=e317]: You have the right to get information from the Club about whether or not it holds information about you, and have access to that information. If you request this information, the Club must respond within 20 working days. You have the right to ask for the information to be corrected.
+          - paragraph [ref=e318]
+          - paragraph [ref=e319]: If you think that the Privacy Act has been breached, you should complain to the Club Secretary.
+        - generic [ref=e327]:
+          - img [ref=e329]
+          - generic [ref=e338]:
+            - paragraph [ref=e339]:
+              - strong [ref=e340]: Contact information use
+            - paragraph [ref=e341]: The club sends several emails a month to members, providing information about activities that they may participate in.
+        - generic [ref=e347]: Privacy questions
+        - generic [ref=e352]:
+          - paragraph [ref=e361]: I understand my privacy rights *
+          - radiogroup "I understand my privacy rights" [ref=e364]:
+            - radio "Yes" [checked] [ref=e365] [cursor=pointer]:
+              - generic [ref=e371]: "Yes"
+            - radio "No" [ref=e372] [cursor=pointer]:
+              - generic [ref=e378]: "No"
+          - alert [ref=e379]:
+            - img [ref=e381]
+            - generic [ref=e383]: "I understand my privacy rights:"
+        - generic [ref=e388]:
+          - generic [ref=e389]:
+            - paragraph [ref=e397]: My competition images may be used *
+            - paragraph [ref=e403]: Submitted images will be retained by the Club and may be used for Club promotional material.
+          - radiogroup "My competition images may be used" [ref=e406]:
+            - radio "Yes" [checked] [ref=e407] [cursor=pointer]:
+              - generic [ref=e413]: "Yes"
+            - radio "No" [ref=e414] [cursor=pointer]:
+              - generic [ref=e420]: "No"
+          - alert [ref=e421]:
+            - img [ref=e423]
+            - generic [ref=e425]: "My competition images may be used:"
+        - generic [ref=e430]:
+          - button "← Back" [ref=e432] [cursor=pointer]:
+            - generic [ref=e435]: ← Back
+          - button "Next →" [ref=e437] [cursor=pointer]:
+            - generic [ref=e440]: Next →
+      - link "Made with" [ref=e248] [cursor=pointer]:
+        - /url: https://www.fillout.com/discover?utm_source=fillout-powered-by&utm_medium=website&utm_campaign=7SEi2kfbEzus
+        - generic [ref=e249]:
+          - generic [ref=e250]: Made with
+          - img [ref=e252]
+        - img [ref=e262]
+    - region "Notifications alt+T"
+    - region "Notifications alt+T"
+  - alert [ref=e269]
+  - status [ref=e270]
+  - status [ref=e441]
+  - status [ref=e442]

@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e25]:
+      - generic [ref=e39]:
+        - img [ref=e449]
+        - heading "A bit about you" [level=2] [ref=e461]
+        - paragraph [ref=e473]: We like to know about new member's experience and expectations so that we can tailor our services
+        - generic [ref=e479]: About you
+        - generic [ref=e484]:
+          - generic [ref=e485]:
+            - paragraph [ref=e493]: Photographic interests
+            - paragraph [ref=e499]: Tell us about yourself, what equipment you shoot with, your preference/style of what you like to shoot.
+          - textbox "Photographic interests" [ref=e502]:
+            - /placeholder: ""
+          - alert [ref=e503]:
+            - img [ref=e505]
+            - generic [ref=e507]: "Photographic interests:"
+        - generic [ref=e512]:
+          - generic [ref=e513]:
+            - paragraph [ref=e521]: Software
+            - paragraph [ref=e527]: For processing images, digital asset management. If none, say "None".
+          - textbox "Software" [ref=e530]:
+            - /placeholder: ""
+          - alert [ref=e531]:
+            - img [ref=e533]
+            - generic [ref=e535]: "Software:"
+        - generic [ref=e540]:
+          - generic [ref=e541]:
+            - paragraph [ref=e549]: Experience *
+            - paragraph [ref=e555]: How would you grade your experience?
+          - radiogroup "Experience" [ref=e558]:
+            - radio "Novice" [ref=e559] [cursor=pointer]:
+              - generic [ref=e565]: Novice
+            - radio "Intermediate" [ref=e566] [cursor=pointer]:
+              - generic [ref=e572]: Intermediate
+            - radio "Advanced" [ref=e573] [cursor=pointer]:
+              - generic [ref=e579]: Advanced
+          - alert [ref=e580]:
+            - img [ref=e582]
+            - generic [ref=e584]: "Experience:"
+        - generic [ref=e594]:
+          - generic [ref=e595]:
+            - paragraph [ref=e603]: Our Club members
+            - paragraph [ref=e609]: Do you know any of our Club members?
+          - radiogroup "Our Club members" [ref=e612]:
+            - radio "Yes" [ref=e613] [cursor=pointer]:
+              - generic [ref=e619]: "Yes"
+            - radio "No" [checked] [ref=e620] [cursor=pointer]:
+              - generic [ref=e626]: "No"
+          - alert [ref=e627]:
+            - img [ref=e629]
+            - generic [ref=e631]: "Our Club members:"
+        - generic [ref=e637]:
+          - paragraph [ref=e646]: How did you hear about us
+          - generic [ref=e649]:
+            - log [ref=e651]
+            - generic [ref=e652]:
+              - combobox "How did you hear about us" [ref=e655]
+              - img [ref=e659]
+          - alert [ref=e661]:
+            - img [ref=e663]
+            - generic [ref=e665]: "How did you hear about us:"
+        - generic [ref=e670]:
+          - button "← Back" [ref=e672] [cursor=pointer]:
+            - generic [ref=e675]: ← Back
+          - button "Next →" [ref=e677] [cursor=pointer]:
+            - generic [ref=e680]: Next →
+      - link "Made with" [ref=e248] [cursor=pointer]:
+        - /url: https://www.fillout.com/discover?utm_source=fillout-powered-by&utm_medium=website&utm_campaign=7SEi2kfbEzus
+        - generic [ref=e249]:
+          - generic [ref=e250]: Made with
+          - img [ref=e252]
+        - img [ref=e262]
+    - region "Notifications alt+T"
+    - region "Notifications alt+T"
+  - alert [ref=e269]
+  - status [ref=e270]
+  - status [ref=e681]
+  - status [ref=e682]

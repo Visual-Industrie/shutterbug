@@ -1,0 +1,49 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e25]:
+      - generic [ref=e39]:
+        - img [ref=e778]
+        - heading "Annual membership fee" [level=2] [ref=e790]
+        - paragraph [ref=e802]: Payment of $50 can be made direct to the Club bank account, by Credit Card (with a small additional surcharge), or paid in cash to the Club Treasurer. This information will be emailed to you.
+        - generic [ref=e810]:
+          - img [ref=e812]
+          - generic [ref=e821]:
+            - paragraph [ref=e822]:
+              - strong [ref=e823]: Discount - 1 July onwards
+            - paragraph [ref=e824]: From 1 July onwards, the membership fee is reduced to $25.
+        - generic [ref=e830]: Membership fee
+        - generic [ref=e835]:
+          - paragraph [ref=e844]: I plan to pay through *
+          - radiogroup "I plan to pay through" [ref=e847]:
+            - radio "Credit Card" [ref=e848] [cursor=pointer]:
+              - generic [ref=e854]: Credit Card
+            - radio "Funds Transfer" [ref=e855] [cursor=pointer]:
+              - generic [ref=e861]: Funds Transfer
+          - alert [ref=e862]:
+            - img [ref=e864]
+            - generic [ref=e866]: "I plan to pay through:"
+        - generic [ref=e871]:
+          - paragraph [ref=e880]: I plan to pay by *
+          - generic [ref=e883]:
+            - combobox "I plan to pay by" [ref=e885] [cursor=pointer]
+            - generic "Open calendar" [ref=e886] [cursor=pointer]:
+              - img [ref=e887]
+          - alert [ref=e889]:
+            - img [ref=e891]
+            - generic [ref=e893]: "I plan to pay by:"
+        - generic [ref=e898]:
+          - button "← Back" [ref=e900] [cursor=pointer]:
+            - generic [ref=e903]: ← Back
+          - button "Next →" [ref=e905] [cursor=pointer]:
+            - generic [ref=e908]: Next →
+      - link "Made with" [ref=e248] [cursor=pointer]:
+        - /url: https://www.fillout.com/discover?utm_source=fillout-powered-by&utm_medium=website&utm_campaign=7SEi2kfbEzus
+        - generic [ref=e249]:
+          - generic [ref=e250]: Made with
+          - img [ref=e252]
+        - img [ref=e262]
+    - region "Notifications alt+T"
+    - region "Notifications alt+T"
+  - alert [ref=e269]
+  - status [ref=e270]
+  - status [ref=e909]

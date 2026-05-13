@@ -3,8 +3,11 @@ VALUES (
   'email_footer',
   'EMAIL',
   'Email footer',
-  'Do not reply to this email. To contact the Competition Secretary, use compsecwaicamc@gmail.com. All other committee email addresses are on our website.',
-  'Do not reply to this email. To contact the Competition Secretary, use compsecwaicamc@gmail.com. All other committee email addresses are on our website.',
-  'Appended to every outgoing email'
+  '<p>Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>',
+  '<p>Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>',
+  'Appended to every outgoing email (HTML)'
 )
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET
+  value = EXCLUDED.value,
+  default_value = EXCLUDED.default_value,
+  description = EXCLUDED.description;

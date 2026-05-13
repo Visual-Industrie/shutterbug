@@ -4,10 +4,10 @@ import { getPool } from './db.js'
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = 'Wairarapa Camera Club <noreply@wairarapacameraclub.org>'
 
-const DEFAULT_FOOTER_TEXT = `Do not reply to this email. To contact the Competition Secretary, use compsecwaicamc@gmail.com. All other committee email addresses are on our website.`
+const DEFAULT_FOOTER_TEXT = `<p>Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>`
 
-function buildFooterHtml(text: string): string {
-  return `<p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;">${htmlEsc(text).replace('compsecwaicamc@gmail.com', '<a href="mailto:compsecwaicamc@gmail.com" style="color:#9ca3af;">compsecwaicamc@gmail.com</a>')}</p>`
+function buildFooterHtml(html: string): string {
+  return `<div style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;">${html}</div>`
 }
 
 async function getFooterHtml(): Promise<string> {

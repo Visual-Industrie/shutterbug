@@ -1556,6 +1556,32 @@ app.get('/api/competitions/:id/reference', async (req, res) => {
   })
 })
 
+app.get('/api/competitions/:id/website-report', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const pool = getPool()
+  const compRes = await pool.query(
+    `SELECT id, name, status FROM competitions WHERE id = $1`,
+    [req.params.id],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) return void res.status(404).json({ error: 'Competition not found' })
+
+  const entriesRes = await pool.query(
+    `SELECT e.id, e.type, e.title,
+            e.drive_file_url,
+            e.award, e.judge_comment,
+            m.first_name, m.last_name, m.membership_number
+     FROM entries e
+     JOIN members m ON m.id = e.member_id
+     WHERE e.competition_id = $1
+     ORDER BY CASE WHEN e.type = 'printim' THEN 0 ELSE 1 END,
+              m.last_name, m.first_name, e.title`,
+    [req.params.id],
+  )
+
+  res.json({ competition: { id: comp.id, name: comp.name, status: comp.status }, entries: entriesRes.rows })
+})
+
 app.get('/api/judge/:token/reference', async (req, res) => {
   const pool = getPool()
   const tokRes = await pool.query(

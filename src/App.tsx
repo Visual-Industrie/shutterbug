@@ -24,6 +24,7 @@ import CompetitionDetail from '@/pages/CompetitionDetail'
 import Submit from '@/pages/Submit'
 import Judge from '@/pages/Judge'
 import JudgeReference from '@/pages/JudgeReference'
+import WebsiteReport from '@/pages/WebsiteReport'
 import History from '@/pages/History'
 import Join from '@/pages/Join'
 import Profile from '@/pages/Profile'
@@ -49,6 +50,7 @@ export default function App() {
 
           {/* Admin reference view (JWT auth via API, no layout so it's printable) */}
           <Route path="/competitions/:id/reference" element={<JudgeReference />} />
+          <Route path="/competitions/:id/website-report" element={<WebsiteReport />} />
 
           {/* Admin — protected + Layout */}
           <Route

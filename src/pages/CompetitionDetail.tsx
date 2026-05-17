@@ -626,6 +626,12 @@ export default function CompetitionDetail() {
               >
                 View reference →
               </Link>
+              <Link
+                to={`/competitions/${id}/website-report`}
+                className="block text-center text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-amber-700 hover:border-amber-300 transition-colors"
+              >
+                Website report →
+              </Link>
             </div>
           </div>
 

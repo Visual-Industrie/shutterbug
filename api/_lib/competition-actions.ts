@@ -128,7 +128,7 @@ async function sendDeadlineReminderToMemberRow(
   comp: { id: string; name: string; closes_at: string | null; max_projim_entries: number; max_printim_entries: number },
   m: { id: string; first_name: string; last_name: string; email: string },
 ) {
-  const tok = await upsertSubmissionToken(m.id, comp.id, comp.closes_at)
+  const tok = await upsertSubmissionToken(m.id, comp.id, comp.closes_at ? new Date(comp.closes_at) : null)
 
   const entriesRes = await getPool().query(
     `SELECT type, title FROM entries WHERE competition_id = $1 AND member_id = $2 ORDER BY submitted_at ASC`,

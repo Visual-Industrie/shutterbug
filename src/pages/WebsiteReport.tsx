@@ -6,6 +6,7 @@ interface ReportEntry {
   id: string
   type: 'projim' | 'printim'
   title: string
+  drive_file_id: string | null
   drive_file_url: string | null
   award: string | null
   judge_comment: string | null
@@ -43,7 +44,7 @@ function downloadCsv(competition: ReportData['competition'], entries: ReportEntr
     e.title,
     e.award ? (AWARD_LABELS[e.award] ?? e.award) : 'Not Placed',
     e.judge_comment ? stripHtml(e.judge_comment) : '',
-    e.drive_file_url ?? '',
+    e.drive_file_id ? `https://drive.google.com/uc?export=download&id=${e.drive_file_id}` : (e.drive_file_url ?? ''),
   ])
 
   const csv = [headers, ...rows]
@@ -109,8 +110,8 @@ export default function WebsiteReport() {
                   }
                 </td>
                 <td className="px-3 py-2">
-                  {e.drive_file_url
-                    ? <a href={e.drive_file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">Download</a>
+                  {e.drive_file_id
+                    ? <a href={`https://drive.google.com/uc?export=download&id=${e.drive_file_id}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">Download</a>
                     : <span className="text-gray-300 text-xs">—</span>
                   }
                 </td>

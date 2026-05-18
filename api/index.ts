@@ -1568,7 +1568,7 @@ app.get('/api/competitions/:id/website-report', async (req, res) => {
 
   const entriesRes = await pool.query(
     `SELECT e.id, e.type, e.title,
-            e.drive_file_url,
+            e.drive_file_id, e.drive_file_url,
             e.award, e.judge_comment,
             m.first_name, m.last_name, m.membership_number
      FROM entries e

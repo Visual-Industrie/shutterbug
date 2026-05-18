@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
@@ -68,6 +69,35 @@ export default function WebsiteReport() {
     queryFn: () => apiFetch<ReportData>(`/api/competitions/${id}/website-report`),
   })
 
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleDownloadAll() {
+    if (!data) return
+    setDownloading(true)
+    try {
+      const token = localStorage.getItem('sb_admin_token')
+      const response = await fetch(`/api/competitions/${id}/download-entries`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        alert(`Download failed: ${err.error}`)
+        return
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${data.competition.name}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(`Download failed: ${err instanceof Error ? err.message : 'Error'}`)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   if (isLoading) return <div className="p-8 text-sm text-gray-400">Loading…</div>
   if (error || !data) return <div className="p-8 text-sm text-red-500">{(error as Error)?.message ?? 'Failed to load'}</div>
 
@@ -131,12 +161,21 @@ export default function WebsiteReport() {
           <h1 className="text-2xl font-bold text-gray-900 mt-1">{competition.name}</h1>
           <p className="text-sm text-gray-500 mt-0.5">Website manager report</p>
         </div>
-        <button
-          onClick={() => downloadCsv(competition, entries)}
-          className="shrink-0 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
-        >
-          Download CSV
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDownloadAll}
+            disabled={downloading}
+            className="shrink-0 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            {downloading ? 'Downloading…' : 'Download all images'}
+          </button>
+          <button
+            onClick={() => downloadCsv(competition, entries)}
+            className="shrink-0 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            Download CSV
+          </button>
+        </div>
       </div>
 
       <div className="space-y-8">

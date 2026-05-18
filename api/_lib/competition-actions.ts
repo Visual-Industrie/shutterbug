@@ -124,6 +124,68 @@ export async function sendSubmissionReminders(competitionId: string): Promise<{
   return { sent, skipped, errors }
 }
 
+async function sendDeadlineReminderToMemberRow(
+  comp: { id: string; name: string; closes_at: string | null; max_projim_entries: number; max_printim_entries: number },
+  m: { id: string; first_name: string; last_name: string; email: string },
+) {
+  const tok = await upsertSubmissionToken(m.id, comp.id, comp.closes_at)
+
+  const entriesRes = await getPool().query(
+    `SELECT type, title FROM entries WHERE competition_id = $1 AND member_id = $2 ORDER BY submitted_at ASC`,
+    [comp.id, m.id],
+  )
+  const entries = entriesRes.rows as { type: string; title: string }[]
+  const projimCount = entries.filter(e => e.type === 'projim').length
+  const printimCount = entries.filter(e => e.type === 'printim').length
+  let status: 'none' | 'partial' | 'full'
+  if (entries.length === 0) status = 'none'
+  else if (projimCount >= comp.max_projim_entries && printimCount >= comp.max_printim_entries) status = 'full'
+  else status = 'partial'
+
+  const { subject, html } = await deadlineReminderEmail({
+    memberName: `${m.first_name} ${m.last_name}`,
+    competitionName: comp.name,
+    closesAt: comp.closes_at,
+    token: tok.token,
+    status,
+    projimCount,
+    printimCount,
+    maxProjim: comp.max_projim_entries,
+    maxPrintim: comp.max_printim_entries,
+    entries,
+  })
+  await sendEmail({
+    type: 'deadline_reminder',
+    to: m.email,
+    toName: `${m.first_name} ${m.last_name}`,
+    subject,
+    html,
+    memberId: m.id,
+    competitionId: comp.id,
+    tokenId: tok.id,
+  })
+}
+
+export async function sendDeadlineReminderToMember(competitionId: string, memberId: string): Promise<{ memberName: string; status: string }> {
+  const compRes = await getPool().query(
+    `SELECT id, name, closes_at, status, max_projim_entries, max_printim_entries FROM competitions WHERE id = $1`,
+    [competitionId],
+  )
+  const comp = compRes.rows[0]
+  if (!comp) throw new Error('Competition not found')
+  if (!['open', 'closed'].includes(comp.status)) throw new Error(`Competition is not open or closed (status: ${comp.status})`)
+
+  const memberRes = await getPool().query(
+    `SELECT id, first_name, last_name, email FROM members WHERE id = $1`,
+    [memberId],
+  )
+  const m = memberRes.rows[0]
+  if (!m) throw new Error('Member not found')
+
+  await sendDeadlineReminderToMemberRow(comp, m)
+  return { memberName: `${m.first_name} ${m.last_name}`, status: comp.status }
+}
+
 export async function sendDeadlineReminders(competitionId: string): Promise<{
   sent: number
   skipped: number
@@ -149,43 +211,7 @@ export async function sendDeadlineReminders(competitionId: string): Promise<{
 
   for (const m of membersRes.rows) {
     try {
-      const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
-
-      const entriesRes = await getPool().query(
-        `SELECT type, title FROM entries WHERE competition_id = $1 AND member_id = $2 ORDER BY submitted_at ASC`,
-        [competitionId, m.id],
-      )
-      const entries = entriesRes.rows as { type: string; title: string }[]
-      const projimCount = entries.filter(e => e.type === 'projim').length
-      const printimCount = entries.filter(e => e.type === 'printim').length
-      const totalCount = entries.length
-      let status: 'none' | 'partial' | 'full'
-      if (totalCount === 0) status = 'none'
-      else if (projimCount >= comp.max_projim_entries && printimCount >= comp.max_printim_entries) status = 'full'
-      else status = 'partial'
-
-      const { subject, html } = await deadlineReminderEmail({
-        memberName: `${m.first_name} ${m.last_name}`,
-        competitionName: comp.name,
-        closesAt: comp.closes_at,
-        token: tok.token,
-        status,
-        projimCount,
-        printimCount,
-        maxProjim: comp.max_projim_entries,
-        maxPrintim: comp.max_printim_entries,
-        entries,
-      })
-      await sendEmail({
-        type: 'deadline_reminder',
-        to: m.email,
-        toName: `${m.first_name} ${m.last_name}`,
-        subject,
-        html,
-        memberId: m.id,
-        competitionId,
-        tokenId: tok.id,
-      })
+      await sendDeadlineReminderToMemberRow(comp, m)
       sent++
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

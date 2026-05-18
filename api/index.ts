@@ -17,6 +17,7 @@ import {
   sendMemberHistoryLink,
   sendResults,
   sendDeadlineReminders,
+  sendDeadlineReminderToMember,
 } from './_lib/competition-actions.js'
 import { sendEmail, subsReminderEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
@@ -394,6 +395,14 @@ app.post('/api/competitions/:id/send-judging-invite', async (req, res) => {
 app.post('/api/competitions/:id/send-deadline-reminders', async (req, res) => {
   if (!requireAuth(req, res)) return
   try { res.json(await sendDeadlineReminders(req.params.id)) }
+  catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
+})
+
+app.post('/api/competitions/:id/send-deadline-reminder', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { memberId } = req.body ?? {}
+  if (!memberId) return void res.status(400).json({ error: 'memberId required' })
+  try { res.json(await sendDeadlineReminderToMember(req.params.id, memberId)) }
   catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : 'Error' }) }
 })
 

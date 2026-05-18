@@ -332,8 +332,8 @@ export async function deadlineReminderEmail(opts: {
   } else {
     templateKey = 'deadline_reminder_full'
     defaultSubject = `Final check – ${opts.competitionName} closes ${closes}`
-    defaultIntro = `<p>You've submitted the maximum number of entries for <strong>${opts.competitionName}</strong> — great work!</p>
-<p>Please take a moment to review your entries before the deadline.</p>`
+    defaultIntro = `<p>You've submitted the maximum number of images allowed for <strong>${opts.competitionName}</strong> — great work!</p>
+<p>Don't forget you can review, remove and resubmit images up until the competition close deadline on <strong>${closes}</strong>.</p>`
   }
 
   const tmpl = await getEmailTemplate(templateKey)

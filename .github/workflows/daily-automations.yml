@@ -1,0 +1,15 @@
+name: Daily competition email automations
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # 19:00 UTC = 7am NZST / 8am NZDT
+  workflow_dispatch:        # allow manual trigger from GitHub Actions UI
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process automations
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/process-automations" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

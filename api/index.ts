@@ -14,6 +14,7 @@ import {
   sendSubmissionReminders,
   sendSubmissionInviteSingle,
   sendJudgingInvite,
+  sendSubmissionInvites,
   sendMemberHistoryLink,
   sendResults,
   sendDeadlineReminders,
@@ -760,6 +761,118 @@ app.post('/api/email/subs-reminder', async (req, res) => {
     console.error('POST /api/email/subs-reminder', err)
     res.status(500).json({ error: (err as Error).message })
   }
+})
+
+// ── Email automations ─────────────────────────────────────────────────────────
+
+app.get('/api/automations', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `SELECT a.*, l.competition_id AS last_comp, l.fired_at AS last_fired_at
+     FROM email_automations a
+     LEFT JOIN email_automation_log l ON l.automation_id = a.id
+     ORDER BY a.created_at, l.fired_at DESC`,
+  )
+  // Collapse multiple log rows per automation into one
+  const map = new Map<string, Record<string, unknown>>()
+  for (const row of result.rows) {
+    if (!map.has(row.id)) map.set(row.id, { ...row })
+  }
+  res.json([...map.values()])
+})
+
+app.post('/api/automations', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { trigger, days_before, action, label } = req.body ?? {}
+  if (!trigger || !action) return void res.status(400).json({ error: 'trigger and action required' })
+  const result = await getPool().query(
+    `INSERT INTO email_automations (trigger, days_before, action, label) VALUES ($1,$2,$3,$4) RETURNING *`,
+    [trigger, days_before ?? null, action, label ?? null],
+  )
+  res.json(result.rows[0])
+})
+
+app.patch('/api/automations/:id', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { label, days_before, enabled } = req.body ?? {}
+  const result = await getPool().query(
+    `UPDATE email_automations SET
+       label = COALESCE($1, label),
+       days_before = CASE WHEN $2::text IS NOT NULL THEN $2::integer ELSE days_before END,
+       enabled = COALESCE($3, enabled)
+     WHERE id = $4 RETURNING *`,
+    [label ?? null, days_before?.toString() ?? null, enabled ?? null, req.params.id],
+  )
+  if (!result.rows[0]) return void res.status(404).json({ error: 'Not found' })
+  res.json(result.rows[0])
+})
+
+app.delete('/api/automations/:id', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  await getPool().query(`DELETE FROM email_automations WHERE id = $1`, [req.params.id])
+  res.json({ ok: true })
+})
+
+app.post('/api/cron/process-automations', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET
+  const isCron = cronSecret && req.headers['x-cron-secret'] === cronSecret
+  if (!isCron && !requireAuth(req, res)) return
+
+  const pool = getPool()
+  const automations = (await pool.query(
+    `SELECT * FROM email_automations WHERE enabled = true ORDER BY created_at`,
+  )).rows
+
+  const fired: { automationId: string; competitionId: string; action: string; result: unknown }[] = []
+  let skipped = 0
+
+  for (const auto of automations) {
+    let compQuery: string
+    let compParams: unknown[]
+
+    if (auto.trigger === 'competition_opens') {
+      compQuery = `SELECT id, name FROM competitions WHERE status = 'open' AND opens_at::date <= CURRENT_DATE`
+      compParams = []
+    } else if (auto.trigger === 'before_competition_closes') {
+      compQuery = `SELECT id, name FROM competitions WHERE status = 'open' AND closes_at::date - $1 = CURRENT_DATE`
+      compParams = [auto.days_before]
+    } else {
+      continue
+    }
+
+    const comps = (await pool.query(compQuery, compParams)).rows
+
+    for (const comp of comps) {
+      // Skip if already fired for this automation+competition pair
+      const existing = await pool.query(
+        `SELECT id FROM email_automation_log WHERE automation_id = $1 AND competition_id = $2`,
+        [auto.id, comp.id],
+      )
+      if (existing.rows.length > 0) { skipped++; continue }
+
+      try {
+        let result: unknown
+        if (auto.action === 'submission_invites') {
+          result = await sendSubmissionInvites(comp.id)
+        } else if (auto.action === 'deadline_reminders') {
+          result = await sendDeadlineReminders(comp.id)
+        } else {
+          continue
+        }
+
+        await pool.query(
+          `INSERT INTO email_automation_log (automation_id, competition_id, result) VALUES ($1,$2,$3)
+           ON CONFLICT (automation_id, competition_id) DO NOTHING`,
+          [auto.id, comp.id, JSON.stringify(result)],
+        )
+        fired.push({ automationId: auto.id, competitionId: comp.id, action: auto.action, result })
+      } catch (err) {
+        console.error(`Automation ${auto.id} failed for competition ${comp.id}:`, err)
+      }
+    }
+  }
+
+  res.json({ fired, skipped })
 })
 
 // ── Member routes ─────────────────────────────────────────────────────────────

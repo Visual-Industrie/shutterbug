@@ -60,6 +60,7 @@ const TABS = [
   { id: 'committee',    label: 'Committee',            roles: null },
   { id: 'subs',         label: 'Subscriptions',        roles: null },
   { id: 'email',        label: 'Email',                roles: null },
+  { id: 'automations',  label: 'Automations',          roles: null },
   { id: 'integrations', label: 'Integrations',         roles: ['super_admin', 'competition_secretary', 'president'] },
 ]
 
@@ -275,6 +276,191 @@ function EmailFooterEditor() {
   const initialHtml = row?.value ?? row?.default_value ?? ''
 
   return <EmailFooterInner key={initialHtml} initialHtml={initialHtml} />
+}
+
+// ── Automations tab ───────────────────────────────────────────────────────────
+
+interface Automation {
+  id: string
+  trigger: string
+  days_before: number | null
+  action: string
+  label: string | null
+  enabled: boolean
+  created_at: string
+}
+
+const TRIGGER_LABELS: Record<string, string> = {
+  competition_opens: 'When competition opens',
+  before_competition_closes: 'N days before competition closes',
+}
+const ACTION_LABELS: Record<string, string> = {
+  submission_invites: 'Send submission invites',
+  deadline_reminders: 'Send personalised deadline reminders',
+}
+
+function AutomationsTab() {
+  const queryClient = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [newTrigger, setNewTrigger] = useState('competition_opens')
+  const [newDaysBefore, setNewDaysBefore] = useState('7')
+  const [newAction, setNewAction] = useState('submission_invites')
+  const [newLabel, setNewLabel] = useState('')
+
+  const { data: automations = [], isLoading } = useQuery<Automation[]>({
+    queryKey: ['automations'],
+    queryFn: () => apiFetch<Automation[]>('/api/automations'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<Automation> }) =>
+      apiFetch(`/api/automations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automations'] }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/automations/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automations'] }),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (body: object) => apiFetch('/api/automations', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['automations'] })
+      setAdding(false)
+      setNewTrigger('competition_opens')
+      setNewDaysBefore('7')
+      setNewAction('submission_invites')
+      setNewLabel('')
+    },
+  })
+
+  const selectCls = 'px-2 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500'
+
+  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700">Scheduled email rules</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Runs daily — fires emails automatically when a competition matches a rule. Each rule fires once per competition.</p>
+        </div>
+
+        {automations.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-gray-400">No rules yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-500">Label</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Trigger</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Action</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Days before</th>
+                <th className="px-4 py-2.5 text-xs font-medium text-gray-500 text-center">Enabled</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {automations.map(a => (
+                <tr key={a.id} className={a.enabled ? '' : 'opacity-50'}>
+                  <td className="px-5 py-3">
+                    <input
+                      defaultValue={a.label ?? ''}
+                      onBlur={e => { if (e.target.value !== (a.label ?? '')) updateMutation.mutate({ id: a.id, patch: { label: e.target.value } }) }}
+                      className="text-sm text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-amber-500 focus:outline-none w-full"
+                      placeholder="(no label)"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{TRIGGER_LABELS[a.trigger] ?? a.trigger}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{ACTION_LABELS[a.action] ?? a.action}</td>
+                  <td className="px-4 py-3">
+                    {a.trigger === 'before_competition_closes' ? (
+                      <input
+                        type="number"
+                        min={1}
+                        defaultValue={a.days_before ?? 7}
+                        onBlur={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v !== a.days_before) updateMutation.mutate({ id: a.id, patch: { days_before: v } }) }}
+                        className="w-16 px-2 py-0.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => updateMutation.mutate({ id: a.id, patch: { enabled: !a.enabled } })}
+                      className={`w-9 h-5 rounded-full transition-colors ${a.enabled ? 'bg-amber-500' : 'bg-gray-200'} relative`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${a.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => { if (confirm('Delete this automation rule?')) deleteMutation.mutate(a.id) }}
+                      className="text-xs text-gray-300 hover:text-red-500 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {adding ? (
+          <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Trigger</label>
+                <select value={newTrigger} onChange={e => setNewTrigger(e.target.value)} className={`w-full ${selectCls}`}>
+                  <option value="competition_opens">When competition opens</option>
+                  <option value="before_competition_closes">N days before competition closes</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Action</label>
+                <select value={newAction} onChange={e => setNewAction(e.target.value)} className={`w-full ${selectCls}`}>
+                  <option value="submission_invites">Send submission invites</option>
+                  <option value="deadline_reminders">Send deadline reminders</option>
+                </select>
+              </div>
+            </div>
+            {newTrigger === 'before_competition_closes' && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-gray-600">Days before close</label>
+                <input type="number" min={1} value={newDaysBefore} onChange={e => setNewDaysBefore(e.target.value)} className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-500" />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Label (optional)</label>
+              <input type="text" value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. Reminder 7 days out" className="w-full px-2 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setAdding(false)} className="px-3 py-1.5 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+              <button
+                onClick={() => createMutation.mutate({ trigger: newTrigger, days_before: newTrigger === 'before_competition_closes' ? parseInt(newDaysBefore) : null, action: newAction, label: newLabel || null })}
+                disabled={createMutation.isPending}
+                className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {createMutation.isPending ? 'Adding…' : 'Add rule'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-3 border-t border-gray-100">
+            <button onClick={() => setAdding(true)} className="text-sm text-amber-600 hover:text-amber-700 font-medium transition-colors">+ Add rule</button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
+        <p className="font-medium mb-1">How it works</p>
+        <p>A GitHub Actions workflow runs daily at 7am NZT and calls the automations endpoint. Each rule fires <strong>once per competition</strong> — it won't re-send if it has already fired for that competition.</p>
+      </div>
+    </div>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -933,6 +1119,9 @@ export default function Settings() {
 
       {/* ── Email tab ── */}
       {tab === 'email' && <EmailFooterEditor />}
+
+      {/* ── Automations tab ── */}
+      {tab === 'automations' && <AutomationsTab />}
 
       {/* ── Grant Login modal ── */}
       {grantTarget && (

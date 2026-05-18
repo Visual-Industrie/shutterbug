@@ -83,7 +83,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 // Keys whose values are pre-built HTML (not escaped)
 const HTML_RAW_KEYS = new Set([
   'submission_link', 'judging_link', 'history_link',
-  'results_table', 'entry_summary',
+  'results_table', 'entry_summary', 'submitted_entries',
 ])
 
 function htmlEsc(s: string): string {

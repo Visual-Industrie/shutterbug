@@ -720,30 +720,16 @@ export default function CompetitionDetail() {
                   variant="secondary"
                   disabled={working}
                 />
-                <ActionButton
-                  label="Send reminders"
-                  onClick={() => doAction(`/api/competitions/${comp.id}/send-submission-reminders`, 'Reminders')}
-                  variant="secondary"
-                  disabled={working}
-                />
               </>
             )}
 
             {(['open', 'closed'] as const).includes(comp.status as 'open' | 'closed') && (
-              <>
-                <ActionButton
-                  label="Send personalised reminders"
-                  onClick={() => doAction(`/api/competitions/${comp.id}/send-deadline-reminders`, 'Deadline reminders')}
-                  variant="secondary"
-                  disabled={working}
-                />
-                <ActionButton
-                  label="Test: send to one member…"
-                  onClick={openTestReminder}
-                  variant="secondary"
-                  disabled={working}
-                />
-              </>
+              <ActionButton
+                label="Send personalised reminders"
+                onClick={() => doAction(`/api/competitions/${comp.id}/send-deadline-reminders`, 'Deadline reminders')}
+                variant="secondary"
+                disabled={working}
+              />
             )}
 
             {comp.status === 'judging' && judge && (

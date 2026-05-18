@@ -159,8 +159,8 @@ export default function JudgeReference() {
               <img
                 src={entry.drive_thumbnail_url}
                 alt={entry.title}
-                onClick={() => entry.drive_file_url && setLightbox({ url: entry.drive_file_url, title: entry.title })}
-                className={`w-full h-48 md:h-52 object-cover ${entry.drive_file_url ? 'cursor-zoom-in' : ''}`}
+                onClick={() => entry.drive_file_id && setLightbox({ url: `https://drive.usercontent.google.com/download?id=${entry.drive_file_id}`, title: entry.title })}
+                className={`w-full h-48 md:h-52 object-cover ${entry.drive_file_id ? 'cursor-zoom-in' : ''}`}
               />
             ) : (
               <div className="w-full h-48 md:h-52 bg-gray-100 flex items-center justify-center text-gray-300 text-4xl">📷</div>

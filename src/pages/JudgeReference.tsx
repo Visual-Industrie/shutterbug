@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import Lightbox, { driveImageUrl } from '@/components/Lightbox'

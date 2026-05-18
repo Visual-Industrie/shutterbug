@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Lightbox, { driveImageUrl } from '@/components/Lightbox'
 
 interface Competition {
   id: string
@@ -97,20 +98,6 @@ function CommentEditor({
   )
 }
 
-function Lightbox({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={onClose}>
-      <button onClick={onClose} className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none">&times;</button>
-      <img src={url} alt={title} className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
-      <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-sm">{title}</div>
-    </div>
-  )
-}
 
 function EntryCard({
   entry,
@@ -155,7 +142,7 @@ function EntryCard({
           <img
             src={entry.driveThumbnailUrl}
             alt={entry.title}
-            onClick={() => entry.driveFileId && onImageClick(`https://drive.usercontent.google.com/download?id=${entry.driveFileId}`, entry.title)}
+            onClick={() => entry.driveFileId && onImageClick(driveImageUrl(entry.driveFileId), entry.title)}
             className={`w-full h-48 object-cover rounded-t-xl ${entry.driveFileId ? 'cursor-zoom-in' : ''}`}
           />
         ) : (

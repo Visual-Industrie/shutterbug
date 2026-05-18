@@ -1,6 +1,7 @@
-import { useEffect, useCallback, useState } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
+import Lightbox, { driveImageUrl } from '@/components/Lightbox'
 
 interface Competition {
   id: string
@@ -64,14 +65,6 @@ export default function JudgeReference() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [entries, setEntries] = useState<ReferenceEntry[]>([])
   const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null)
-  const closeLightbox = useCallback(() => setLightbox(null), [])
-
-  useEffect(() => {
-    if (!lightbox) return
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') closeLightbox() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [lightbox, closeLightbox])
 
   async function load() {
     try {
@@ -159,7 +152,7 @@ export default function JudgeReference() {
               <img
                 src={entry.drive_thumbnail_url}
                 alt={entry.title}
-                onClick={() => entry.drive_file_id && setLightbox({ url: `https://lh3.googleusercontent.com/d/${entry.drive_file_id}=w1920`, title: entry.title })}
+                onClick={() => entry.drive_file_id && setLightbox({ url: driveImageUrl(entry.drive_file_id), title: entry.title })}
                 className={`w-full h-48 md:h-52 object-cover ${entry.drive_file_id ? 'cursor-zoom-in' : ''}`}
               />
             ) : (
@@ -208,13 +201,7 @@ export default function JudgeReference() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={closeLightbox}>
-          <button onClick={closeLightbox} className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none">&times;</button>
-          <img src={lightbox.url} alt={lightbox.title} className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
-          <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-sm">{lightbox.title}</div>
-        </div>
-      )}
+      {lightbox && <Lightbox url={lightbox.url} title={lightbox.title} onClose={() => setLightbox(null)} />}
 
       <style>{`
         @media print {

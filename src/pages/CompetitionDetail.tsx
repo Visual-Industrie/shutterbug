@@ -138,14 +138,6 @@ export default function CompetitionDetail() {
   const [singleInviteSending, setSingleInviteSending] = useState(false)
   const [singleInviteError, setSingleInviteError] = useState<string | null>(null)
 
-  // Test reminder modal
-  const [showTestReminder, setShowTestReminder] = useState(false)
-  const [testReminderMemberOptions, setTestReminderMemberOptions] = useState<{ id: string; first_name: string; last_name: string; email: string }[]>([])
-  const [testReminderSearch, setTestReminderSearch] = useState('')
-  const [testReminderMemberId, setTestReminderMemberId] = useState('')
-  const [testReminderSending, setTestReminderSending] = useState(false)
-  const [testReminderResult, setTestReminderResult] = useState<string | null>(null)
-  const [testReminderError, setTestReminderError] = useState<string | null>(null)
 
   // Assign judge modal
   const [showJudge, setShowJudge] = useState(false)
@@ -347,39 +339,6 @@ export default function CompetitionDetail() {
       setSingleInviteError(err instanceof Error ? err.message : 'Failed to send invite')
     } finally {
       setSingleInviteSending(false)
-    }
-  }
-
-  async function openTestReminder() {
-    const { data } = await supabase
-      .from('members')
-      .select('id, first_name, last_name, email')
-      .eq('status', 'active')
-      .not('email', 'like', '%@privacy.wcc.local')
-      .order('last_name')
-    setTestReminderMemberOptions((data ?? []) as typeof testReminderMemberOptions)
-    setTestReminderMemberId('')
-    setTestReminderSearch('')
-    setTestReminderResult(null)
-    setTestReminderError(null)
-    setShowTestReminder(true)
-  }
-
-  async function handleTestReminder() {
-    if (!testReminderMemberId || !comp) return
-    setTestReminderSending(true)
-    setTestReminderError(null)
-    setTestReminderResult(null)
-    try {
-      const res = await apiFetch<{ memberName: string }>(`/api/competitions/${comp.id}/send-deadline-reminder`, {
-        method: 'POST',
-        body: JSON.stringify({ memberId: testReminderMemberId }),
-      })
-      setTestReminderResult(`Sent to ${res.memberName}`)
-    } catch (err) {
-      setTestReminderError(err instanceof Error ? err.message : 'Failed to send')
-    } finally {
-      setTestReminderSending(false)
     }
   }
 
@@ -887,51 +846,7 @@ export default function CompetitionDetail() {
         </div>
       )}
 
-      {/* Test Reminder Modal */}
-      {showTestReminder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowTestReminder(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-              <h2 className="text-base font-semibold text-gray-900">Send reminder to one member</h2>
-              <button onClick={() => setShowTestReminder(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-            </div>
-            <div className="p-4">
-              <p className="text-xs text-gray-400 mb-3">Sends the appropriate reminder based on their current entry count (none / partial / full).</p>
-              <input
-                type="search"
-                placeholder="Search members…"
-                value={testReminderSearch}
-                onChange={e => setTestReminderSearch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <div className="max-h-60 overflow-y-auto space-y-1">
-                {testReminderMemberOptions
-                  .filter(m => !testReminderSearch || `${m.first_name} ${m.last_name} ${m.email}`.toLowerCase().includes(testReminderSearch.toLowerCase()))
-                  .map(m => (
-                    <label key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                      <input type="radio" name="testMember" value={m.id} checked={testReminderMemberId === m.id} onChange={() => setTestReminderMemberId(m.id)} className="accent-amber-600" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-900">{m.first_name} {m.last_name}</div>
-                        <div className="text-xs text-gray-400 truncate">{m.email}</div>
-                      </div>
-                    </label>
-                  ))}
-              </div>
-              {testReminderResult && <p className="mt-3 text-sm text-green-600">{testReminderResult}</p>}
-              {testReminderError && <p className="mt-3 text-sm text-red-600">{testReminderError}</p>}
-            </div>
-            <div className="px-5 py-4 border-t border-gray-200 flex gap-3">
-              <button type="button" onClick={() => setShowTestReminder(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                Close
-              </button>
-              <button onClick={handleTestReminder} disabled={!testReminderMemberId || testReminderSending} className="flex-1 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50">
-                {testReminderSending ? 'Sending…' : 'Send reminder'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Add / Edit Entry Modal */}
       {showAddEntry && (

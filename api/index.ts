@@ -14,7 +14,6 @@ import {
   sendSubmissionReminders,
   sendSubmissionInviteSingle,
   sendJudgingInvite,
-  sendSubmissionInvites,
   sendMemberHistoryLink,
   sendResults,
   sendDeadlineReminders,

@@ -250,6 +250,24 @@ app.patch('/api/email-templates/:key', async (req, res) => {
   }
 })
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Convert a date-only string (YYYY-MM-DD) to 4pm NZ time (NZST=UTC+12, NZDT=UTC+13).
+// If a full datetime is already provided, pass it through unchanged.
+function nzCloseTime(val: string | null | undefined): string | null {
+  if (!val) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) return val // already has time component
+  // Probe: if 04:00 UTC is 16:xx in Auckland we're in NZST, otherwise NZDT
+  const probe = new Date(`${val}T04:00:00Z`)
+  const nzHour = parseInt(
+    new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', hour: 'numeric', hour12: false }).format(probe),
+    10,
+  )
+  // NZST (UTC+12): 04:00 UTC → 16:00 NZ ✓
+  // NZDT (UTC+13): 04:00 UTC → 17:00 NZ → need 03:00 UTC instead
+  return nzHour === 16 ? `${val}T04:00:00+00:00` : `${val}T03:00:00+00:00`
+}
+
 // ── Competition routes ─────────────────────────────────────────────────────────
 
 app.post('/api/competitions', async (req, res) => {
@@ -281,7 +299,7 @@ app.post('/api/competitions', async (req, res) => {
        points_honours, points_highly_commended, points_commended, points_accepted
      ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING id`,
-    [name.trim(), event_type, season_id, opens_at || null, closes_at || null,
+    [name.trim(), event_type, season_id, opens_at || null, nzCloseTime(closes_at),
      judging_opens_at || null, judging_closes_at || null,
      max_projim_entries, max_printim_entries,
      points_honours, points_highly_commended, points_commended, points_accepted],
@@ -302,7 +320,7 @@ app.patch('/api/competitions/:id', async (req, res) => {
      judging_opens_at=$5,judging_closes_at=$6,max_projim_entries=$7,max_printim_entries=$8,
      points_honours=$9,points_highly_commended=$10,points_commended=$11,points_accepted=$12,
      updated_at=NOW() WHERE id=$13 RETURNING id`,
-    [name.trim(), event_type || 'competition', opens_at || null, closes_at || null,
+    [name.trim(), event_type || 'competition', opens_at || null, nzCloseTime(closes_at),
      judging_opens_at || null, judging_closes_at || null,
      max_projim_entries ?? 1, max_printim_entries ?? 2,
      points_honours ?? 4, points_highly_commended ?? 3, points_commended ?? 2, points_accepted ?? 1,

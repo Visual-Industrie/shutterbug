@@ -390,7 +390,7 @@ function AutomationsTab() {
                   <td className="px-4 py-3 text-center">
                     <button
                       onClick={() => updateMutation.mutate({ id: a.id, patch: { enabled: !a.enabled } })}
-                      className={`w-9 h-5 rounded-full transition-colors ${a.enabled ? 'bg-amber-500' : 'bg-gray-200'} relative`}
+                      className={`w-9 h-5 rounded-full transition-colors overflow-hidden ${a.enabled ? 'bg-amber-500' : 'bg-gray-200'} relative`}
                     >
                       <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${a.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                     </button>

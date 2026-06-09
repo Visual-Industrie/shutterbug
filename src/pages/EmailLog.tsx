@@ -41,6 +41,7 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[member_name]', description: 'Full name of the member' },
     { key: '[competition_name]', description: 'Competition title' },
     { key: '[closes_date]', description: 'Closing date (e.g. "15 March 2026")' },
+    { key: '[competition_description]', description: 'Event description (rich text block, blank if none set)' },
     { key: '[submission_link]', description: 'Button: "Submit your entries"' },
     { key: '[submission_url]', description: 'Plain text submission URL' },
   ],

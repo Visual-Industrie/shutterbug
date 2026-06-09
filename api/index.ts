@@ -273,7 +273,7 @@ function nzCloseTime(val: string | null | undefined): string | null {
 app.post('/api/competitions', async (req, res) => {
   if (!requireAuth(req, res)) return
   const {
-    name, event_type = 'competition',
+    name, event_type = 'competition', description,
     opens_at, closes_at, judging_opens_at, judging_closes_at,
     max_projim_entries = 1, max_printim_entries = 2,
     points_honours = 4, points_highly_commended = 3, points_commended = 2, points_accepted = 1,
@@ -293,13 +293,13 @@ app.post('/api/competitions', async (req, res) => {
 
   const result = await getPool().query(
     `INSERT INTO competitions (
-       name, event_type, season_id, status,
+       name, event_type, season_id, status, description,
        opens_at, closes_at, judging_opens_at, judging_closes_at,
        max_projim_entries, max_printim_entries,
        points_honours, points_highly_commended, points_commended, points_accepted
-     ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING id`,
-    [name.trim(), event_type, season_id, opens_at || null, nzCloseTime(closes_at),
+    [name.trim(), event_type, season_id, description || null, opens_at || null, nzCloseTime(closes_at),
      judging_opens_at || null, judging_closes_at || null,
      max_projim_entries, max_printim_entries,
      points_honours, points_highly_commended, points_commended, points_accepted],
@@ -310,17 +310,17 @@ app.post('/api/competitions', async (req, res) => {
 app.patch('/api/competitions/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
   const {
-    name, event_type, opens_at, closes_at, judging_opens_at, judging_closes_at,
+    name, event_type, description, opens_at, closes_at, judging_opens_at, judging_closes_at,
     max_projim_entries, max_printim_entries,
     points_honours, points_highly_commended, points_commended, points_accepted,
   } = req.body ?? {}
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
   const result = await getPool().query(
-    `UPDATE competitions SET name=$1,event_type=$2,opens_at=$3,closes_at=$4,
-     judging_opens_at=$5,judging_closes_at=$6,max_projim_entries=$7,max_printim_entries=$8,
-     points_honours=$9,points_highly_commended=$10,points_commended=$11,points_accepted=$12,
-     updated_at=NOW() WHERE id=$13 RETURNING id`,
-    [name.trim(), event_type || 'competition', opens_at || null, nzCloseTime(closes_at),
+    `UPDATE competitions SET name=$1,event_type=$2,description=$3,opens_at=$4,closes_at=$5,
+     judging_opens_at=$6,judging_closes_at=$7,max_projim_entries=$8,max_printim_entries=$9,
+     points_honours=$10,points_highly_commended=$11,points_commended=$12,points_accepted=$13,
+     updated_at=NOW() WHERE id=$14 RETURNING id`,
+    [name.trim(), event_type || 'competition', description || null, opens_at || null, nzCloseTime(closes_at),
      judging_opens_at || null, judging_closes_at || null,
      max_projim_entries ?? 1, max_printim_entries ?? 2,
      points_honours ?? 4, points_highly_commended ?? 3, points_commended ?? 2, points_accepted ?? 1,

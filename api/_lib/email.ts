@@ -84,6 +84,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 const HTML_RAW_KEYS = new Set([
   'submission_link', 'judging_link', 'history_link',
   'results_table', 'entry_summary', 'submitted_entries',
+  'competition_description',
 ])
 
 function htmlEsc(s: string): string {
@@ -124,11 +125,16 @@ export async function submissionInviteEmail(opts: {
   competitionName: string
   closesAt: string | null
   token: string
+  description?: string | null
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
   const closes = opts.closesAt
     ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'TBA'
+
+  const descriptionHtml = opts.description && opts.description.replace(/<[^>]+>/g, '').trim()
+    ? `<div style="margin:12px 0;padding:12px 16px;background:#fef3c7;border-left:3px solid #b45309;border-radius:4px">${opts.description}</div>`
+    : ''
 
   const tmpl = await getEmailTemplate('submission_invite')
   if (tmpl) {
@@ -138,6 +144,7 @@ export async function submissionInviteEmail(opts: {
       closes_date: closes,
       submission_link: makeButton(link, 'Submit your entries'),
       submission_url: link,
+      competition_description: descriptionHtml,
     }
     return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
   }
@@ -146,6 +153,7 @@ export async function submissionInviteEmail(opts: {
   const html = `
 <p>Hi ${opts.memberName},</p>
 <p>Entries are now open for <strong>${opts.competitionName}</strong>.</p>
+${descriptionHtml}
 <p>Submissions close on <strong>${closes}</strong>.</p>
 <p>${makeButton(link, 'Submit your entries')}</p>
 <p>Or copy this link: ${link}</p>

@@ -16,7 +16,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<{
   errors: string[]
 }> {
   const compRes = await getPool().query(
-    `SELECT id, name, closes_at, status FROM competitions WHERE id = $1`,
+    `SELECT id, name, closes_at, status, description FROM competitions WHERE id = $1`,
     [competitionId],
   )
   const comp = compRes.rows[0]
@@ -42,6 +42,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<{
         competitionName: comp.name,
         closesAt: comp.closes_at,
         token: tok.token,
+        description: comp.description,
       })
       await sendEmail({
         type: 'submission_invite',
@@ -275,7 +276,7 @@ export async function sendSubmissionInviteSingle(
   memberId: string,
 ): Promise<void> {
   const compRes = await getPool().query(
-    `SELECT id, name, closes_at, status FROM competitions WHERE id = $1`,
+    `SELECT id, name, closes_at, status, description FROM competitions WHERE id = $1`,
     [competitionId],
   )
   const comp = compRes.rows[0]
@@ -296,6 +297,7 @@ export async function sendSubmissionInviteSingle(
     competitionName: comp.name,
     closesAt: comp.closes_at,
     token: tok.token,
+    description: comp.description,
   })
   await sendEmail({
     type: 'submission_invite',

@@ -1,6 +1,9 @@
 import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import TiptapLink from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { compressImage } from '@/lib/image'
@@ -9,6 +12,7 @@ interface CompDetail {
   id: string
   name: string
   event_type: string
+  description: string | null
   status: string
   opens_at: string | null
   closes_at: string | null
@@ -130,6 +134,14 @@ export default function CompetitionDetail() {
   const [editForm, setEditForm] = useState<CompForm | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
 
+  const descEditor = useEditor({
+    extensions: [StarterKit, TiptapLink.configure({ openOnClick: false })],
+    content: '',
+    editorProps: {
+      attributes: { class: 'prose prose-sm max-w-none min-h-[80px] focus:outline-none px-4 py-3 text-sm text-gray-700' },
+    },
+  })
+
   // Single member invite modal
   const [showSingleInvite, setShowSingleInvite] = useState(false)
   const [memberOptions, setMemberOptions] = useState<{ id: string; first_name: string; last_name: string; email: string }[]>([])
@@ -175,7 +187,7 @@ export default function CompetitionDetail() {
       const { data: comp } = await supabase
         .from('competitions')
         .select(`
-          id, name, event_type, status, opens_at, closes_at,
+          id, name, event_type, description, status, opens_at, closes_at,
           judging_opens_at, judging_closes_at,
           max_projim_entries, max_printim_entries,
           points_honours, points_highly_commended, points_commended, points_accepted,
@@ -295,6 +307,7 @@ export default function CompetitionDetail() {
       points_commended: comp.points_commended,
       points_accepted: comp.points_accepted,
     })
+    descEditor?.commands.setContent(comp.description ?? '')
     setEditError(null)
     setShowEdit(true)
   }
@@ -303,7 +316,9 @@ export default function CompetitionDetail() {
     e.preventDefault()
     if (!editForm) return
     setEditError(null)
-    editMutation.mutate(editForm)
+    const descHtml = descEditor?.getHTML()
+    const description = descHtml && descHtml !== '<p></p>' ? descHtml : null
+    editMutation.mutate({ ...editForm, description } as CompForm & { description: string | null })
   }
 
   function setEditField<K extends keyof CompForm>(k: K, v: CompForm[K]) {
@@ -508,6 +523,17 @@ export default function CompetitionDetail() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: details */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Description */}
+          {comp.description && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">Description</h2>
+              <div
+                className="prose prose-sm max-w-none text-gray-700"
+                dangerouslySetInnerHTML={{ __html: comp.description }}
+              />
+            </div>
+          )}
+
           {/* Dates */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Schedule</h2>
@@ -733,6 +759,17 @@ export default function CompetitionDetail() {
                   <option value="award">Award</option>
                   <option value="other">Other</option>
                 </select>
+              </Field>
+
+              <Field label="Description">
+                <div className="flex gap-1 flex-wrap border border-gray-200 rounded-t-lg px-2 py-1.5 bg-gray-50">
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleBold().run()} className={`px-2 py-0.5 text-xs rounded font-bold ${descEditor?.isActive('bold') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>B</button>
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleItalic().run()} className={`px-2 py-0.5 text-xs rounded italic ${descEditor?.isActive('italic') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>I</button>
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleBulletList().run()} className={`px-2 py-0.5 text-xs rounded ${descEditor?.isActive('bulletList') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>• List</button>
+                </div>
+                <div className="border border-gray-300 rounded-b-lg border-t-0 bg-white">
+                  <EditorContent editor={descEditor} />
+                </div>
               </Field>
 
               <div className="pt-1 border-t border-gray-100">

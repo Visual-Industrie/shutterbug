@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import TiptapLink from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -22,6 +25,7 @@ interface Competition {
 interface AddForm {
   name: string
   event_type: string
+  description?: string | null
   opens_at: string
   closes_at: string
   judging_opens_at: string
@@ -37,6 +41,7 @@ interface AddForm {
 const EMPTY_FORM: AddForm = {
   name: '',
   event_type: 'competition',
+  description: null,
   opens_at: '',
   closes_at: '',
   judging_opens_at: '',
@@ -86,6 +91,14 @@ export default function Competitions() {
   const [form, setForm] = useState<AddForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
 
+  const descEditor = useEditor({
+    extensions: [StarterKit, TiptapLink.configure({ openOnClick: false })],
+    content: '',
+    editorProps: {
+      attributes: { class: 'prose prose-sm max-w-none min-h-[80px] focus:outline-none px-4 py-3 text-sm text-gray-700' },
+    },
+  })
+
   const [deleteTarget, setDeleteTarget] = useState<Competition | null>(null)
 
   const { data: allComps = [], isLoading } = useQuery<Competition[]>({
@@ -129,6 +142,12 @@ export default function Competitions() {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
+
+  function closeModal() {
+    setShowModal(false)
+    setForm(EMPTY_FORM)
+    descEditor?.commands.setContent('')
+  }
 
   const createMutation = useMutation({
     mutationFn: (form: AddForm) =>
@@ -182,7 +201,9 @@ export default function Competitions() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    createMutation.mutate(form)
+    const descHtml = descEditor?.getHTML()
+    const description = descHtml && descHtml !== '<p></p>' ? descHtml : null
+    createMutation.mutate({ ...form, description })
   }
 
   function fmt(d: string | null) {
@@ -329,11 +350,11 @@ export default function Competitions() {
       {/* Add Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeModal} />
           <div className="relative bg-white h-full w-full max-w-md shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Add event</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
             </div>
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
@@ -357,6 +378,17 @@ export default function Competitions() {
                   </select>
                 </Field>
               </div>
+
+              <Field label="Description">
+                <div className="flex gap-1 flex-wrap border border-gray-200 rounded-t-lg px-2 py-1.5 bg-gray-50">
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleBold().run()} className={`px-2 py-0.5 text-xs rounded font-bold ${descEditor?.isActive('bold') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>B</button>
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleItalic().run()} className={`px-2 py-0.5 text-xs rounded italic ${descEditor?.isActive('italic') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>I</button>
+                  <button type="button" onClick={() => descEditor?.chain().focus().toggleBulletList().run()} className={`px-2 py-0.5 text-xs rounded ${descEditor?.isActive('bulletList') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>• List</button>
+                </div>
+                <div className="border border-gray-300 rounded-b-lg border-t-0 bg-white">
+                  <EditorContent editor={descEditor} />
+                </div>
+              </Field>
 
               <div className="pt-1 border-t border-gray-100">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Schedule</p>
@@ -426,7 +458,7 @@ export default function Competitions() {
             <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel

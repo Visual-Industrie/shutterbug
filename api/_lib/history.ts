@@ -9,6 +9,7 @@ export interface HistoryEntry {
   type: string
   title: string
   award: string | null
+  judgeComment: string | null
   pointsAwarded: number | null
   driveThumbnailUrl: string | null
   driveFileUrl: string | null
@@ -56,6 +57,7 @@ export async function getMemberHistory(tokenValue: string): Promise<MemberHistor
        e.type,
        e.title,
        e.award,
+       e.judge_comment AS "judgeComment",
        e.points_awarded AS "pointsAwarded",
        e.drive_thumbnail_url AS "driveThumbnailUrl",
        e.drive_file_url AS "driveFileUrl",

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/contexts/AuthContext'
 
@@ -25,11 +25,17 @@ import Submit from '@/pages/Submit'
 import Judge from '@/pages/Judge'
 import JudgeReference from '@/pages/JudgeReference'
 import WebsiteReport from '@/pages/WebsiteReport'
-import History from '@/pages/History'
+import Portal from '@/pages/Portal'
 import Join from '@/pages/Join'
 import Profile from '@/pages/Profile'
 import Settings from '@/pages/Settings'
 import SetPassword from '@/pages/SetPassword'
+
+/** Legacy /history/:token links → /portal/:token (scenario A). */
+function HistoryRedirect() {
+  const { token } = useParams<{ token: string }>()
+  return <Navigate to={`/portal/${token}`} replace />
+}
 
 export default function App() {
   return (
@@ -46,7 +52,12 @@ export default function App() {
           <Route path="/submit/:token" element={<Submit />} />
           <Route path="/judge/:token" element={<Judge />} />
           <Route path="/judge/:token/reference" element={<JudgeReference />} />
-          <Route path="/history/:token" element={<History />} />
+
+          {/* Member self-service portal */}
+          <Route path="/portal/:token" element={<Portal />} />
+          <Route path="/portal" element={<Portal />} />
+          {/* Legacy history links redirect into the portal, preserving the token */}
+          <Route path="/history/:token" element={<HistoryRedirect />} />
 
           {/* Admin reference view (JWT auth via API, no layout so it's printable) */}
           <Route path="/competitions/:id/reference" element={<JudgeReference />} />

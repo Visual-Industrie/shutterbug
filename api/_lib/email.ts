@@ -246,7 +246,7 @@ export async function memberHistoryEmail(opts: {
   memberName: string
   token: string
 }): Promise<{ subject: string; html: string }> {
-  const link = `${appUrl}/history/${opts.token}`
+  const link = `${appUrl}/portal/${opts.token}`
 
   const tmpl = await getEmailTemplate('member_history_link')
   if (tmpl) {
@@ -383,7 +383,7 @@ export async function resultsNotificationEmail(opts: {
   entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null }>
   token: string
 }): Promise<{ subject: string; html: string }> {
-  const link = `${appUrl}/history/${opts.token}`
+  const link = `${appUrl}/portal/${opts.token}`
 
   const rows = opts.entries.map(e => {
     const award = e.award ? e.award.replace(/_/g, ' ') : 'Not placed'

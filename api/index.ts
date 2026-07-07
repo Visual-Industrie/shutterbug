@@ -28,6 +28,13 @@ import { deleteFromDrive, createDriveUploadSession, downloadFromDrive, processDr
 import { processImage, generateThumbnail, buildEntryFilename } from './_lib/image.js'
 import { parseUpload } from './_lib/parse-upload.js'
 import { getPool } from './_lib/db.js'
+import { upsertSubmissionToken } from './_lib/tokens.js'
+import {
+  getPortalMember,
+  resolveMemberFromToken,
+  setSessionCookie,
+  checkRateLimit,
+} from './_lib/portal.js'
 
 const app = express()
 app.use(express.json())
@@ -1849,6 +1856,147 @@ app.get('/api/history/:token', async (req, res) => {
   const data = await getMemberHistory(req.params.token)
   if (!data) return void res.status(404).json({ error: 'Invalid or expired link' })
   res.json(data)
+})
+
+// ── Member self-service portal (public, cookie/token-gated) ────────────────────
+
+// Establish a session from a magic-link token (scenario A).
+app.post('/api/portal/session', async (req, res) => {
+  const { token } = req.body ?? {}
+  if (!token) return void res.status(400).json({ error: 'token is required' })
+  const resolved = await resolveMemberFromToken(token)
+  if (!resolved) return void res.status(401).json({ error: 'That link is no longer valid' })
+  setSessionCookie(res, token)
+  res.json({ member: resolved.member })
+})
+
+// Resolve the current member from the session cookie (scenarios B). Re-validates
+// the token every call so a revoked member_history token locks the member out.
+app.get('/api/portal/me', async (req, res) => {
+  const resolved = await getPortalMember(req)
+  if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
+  res.json({ member: resolved.member })
+})
+
+// Full competition history for the signed-in member.
+app.get('/api/portal/history', async (req, res) => {
+  const resolved = await getPortalMember(req)
+  if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
+  const data = await getMemberHistory(resolved.token.token)
+  if (!data) return void res.status(401).json({ error: 'Not signed in' })
+  res.json(data)
+})
+
+// Currently-open competitions the member can submit to. We find-or-create the
+// member's submission token per competition and hand it back so the portal can
+// reuse the existing /api/submit/:token upload machinery. Identity is derived
+// from the session cookie — the client never supplies a member_id.
+app.get('/api/portal/open-competitions', async (req, res) => {
+  const resolved = await getPortalMember(req)
+  if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
+
+  const openRes = await getPool().query(
+    `SELECT id, name, closes_at FROM competitions
+     WHERE status = 'open' AND event_type = 'competition'
+     ORDER BY closes_at ASC NULLS LAST, name ASC`,
+  )
+
+  const competitions = []
+  for (const comp of openRes.rows) {
+    const tok = await upsertSubmissionToken(
+      resolved.member.id,
+      comp.id,
+      comp.closes_at ? new Date(comp.closes_at) : null,
+    )
+    competitions.push({ competitionId: comp.id, name: comp.name, submitToken: tok.token })
+  }
+  res.json({ competitions })
+})
+
+// Public lookup / resend-magic-link flow. Always returns an identical response
+// regardless of whether a member matched, to prevent membership enumeration.
+app.post('/api/portal/request-link', async (req, res) => {
+  const { email, membershipNumber } = req.body ?? {}
+  const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+    ?? req.socket.remoteAddress ?? 'unknown'
+  const rateKey = `${ip}:${String(email ?? '').toLowerCase()}`
+
+  const generic = { ok: true }
+
+  if (!email?.trim() || !membershipNumber?.trim()) {
+    // Don't reveal which field was missing; just return the neutral response.
+    return void res.json(generic)
+  }
+  if (!checkRateLimit(rateKey)) {
+    // Silently succeed to avoid signalling anything useful to an abuser.
+    return void res.json(generic)
+  }
+
+  try {
+    const match = await getPool().query(
+      `SELECT id, email FROM members
+       WHERE lower(email) = lower($1) AND membership_number = $2
+       LIMIT 1`,
+      [email.trim(), membershipNumber.trim()],
+    )
+    const member = match.rows[0]
+    if (member && !String(member.email).includes('@privacy.wcc.local')) {
+      // find-or-create the member_history token, send link, write email_log —
+      // all handled inside sendMemberHistoryLink.
+      await sendMemberHistoryLink(member.id)
+    }
+  } catch (err) {
+    console.error('portal request-link failed', err)
+    // Still return the generic response — never leak internal state.
+  }
+  res.json(generic)
+})
+
+// Self-service profile update. Only address / phone / email are editable; every
+// other field (membership number, status, subs, points, …) is ignored. member_id
+// comes from the session, never the request body.
+app.patch('/api/portal/profile', async (req, res) => {
+  const resolved = await getPortalMember(req)
+  if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
+
+  const { address, phone, email } = req.body ?? {}
+  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
+
+  try {
+    // NOTE (v1 decision): changing email here does NOT invalidate the current
+    // magic-link token or require re-verification — the token is keyed to the
+    // member row, not the email. Straightforward update is acceptable for v1;
+    // revisit if email-based account takeover becomes a concern.
+    const result = await getPool().query(
+      `UPDATE members SET email = $1, phone = $2, address = $3, updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, first_name, last_name, email, phone, address, membership_number`,
+      [
+        email.trim().toLowerCase(),
+        phone?.trim() || null,
+        address?.trim() || null,
+        resolved.member.id,
+      ],
+    )
+    const m = result.rows[0]
+    res.json({
+      member: {
+        id: m.id,
+        firstName: m.first_name,
+        lastName: m.last_name,
+        email: m.email,
+        phone: m.phone,
+        address: m.address,
+        membershipNumber: m.membership_number,
+      },
+    })
+  } catch (err: unknown) {
+    // Unique violation on members.email
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+      return void res.status(409).json({ error: 'That email address is already in use by another member' })
+    }
+    throw err
+  }
 })
 
 // Global error handler — catches any uncaught async throws from route handlers

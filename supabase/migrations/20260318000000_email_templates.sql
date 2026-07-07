@@ -39,7 +39,7 @@ INSERT INTO email_templates (key, name, description, subject_template, body_html
  'Sent to the assigned judge when a competition moves to judging status.',
  'Judge invitation – [competition_name]',
  $body$<p>Hi [judge_name],</p>
-<p>You''ve been invited to judge <strong>[competition_name]</strong>.</p>
+<p>You've been invited to judge <strong>[competition_name]</strong>.</p>
 <p>There are <strong>[projim_count] projected</strong> and <strong>[printim_count] printed</strong> images to judge.</p>
 <p>Please complete your judging by <strong>[judging_closes_date]</strong>.</p>
 <p>[judging_link]</p>
@@ -51,10 +51,10 @@ INSERT INTO email_templates (key, name, description, subject_template, body_html
  'Sent to a member when an admin shares their personal photo history link.',
  'Your Wairarapa Camera Club photo history',
  $body$<p>Hi [member_name],</p>
-<p>Here''s your personal link to view all your competition entries and scores.</p>
+<p>Here's your personal link to view all your competition entries and scores.</p>
 <p>[history_link]</p>
 <p>Or copy this link: [history_url]</p>
-<p>This link is unique to you — please don''t share it.</p>
+<p>This link is unique to you — please don't share it.</p>
 <p>—<br>Wairarapa Camera Club</p>$body$),
 
 ('results_notification',

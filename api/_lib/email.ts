@@ -82,7 +82,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 // Keys whose values are pre-built HTML (not escaped)
 const HTML_RAW_KEYS = new Set([
-  'submission_link', 'judging_link', 'history_link',
+  'submission_link', 'judging_link', 'history_link', 'review_link',
   'results_table', 'entry_summary', 'submitted_entries',
   'competition_description',
 ])
@@ -427,6 +427,88 @@ export async function resultsNotificationEmail(opts: {
 <p>Results are in for <strong>${opts.competitionName}</strong>!</p>
 ${resultsTable}
 <p>${makeButton(link, 'View full history')}</p>
+<p>—<br>Wairarapa Camera Club</p>
+`
+  return { subject, html }
+}
+
+function fmtDate(d: string | null): string {
+  if (!d) return 'TBA'
+  const parsed = new Date(d)
+  if (isNaN(parsed.getTime())) return d
+  return parsed.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+export async function applicationReceivedEmail(opts: {
+  firstName: string
+  membershipNumber: string
+  subsYear: string
+  subsAmount: string
+  payByDate: string | null
+  bankAccount: string
+}): Promise<{ subject: string; html: string }> {
+  const amount = `$${parseFloat(opts.subsAmount || '0').toFixed(2)}`
+  const payBy = fmtDate(opts.payByDate)
+  const bank = opts.bankAccount?.trim() || 'available from the club treasurer'
+
+  const tmpl = await getEmailTemplate('application_received')
+  if (tmpl) {
+    const vars = {
+      first_name: opts.firstName,
+      membership_number: opts.membershipNumber,
+      subs_year: opts.subsYear,
+      subs_amount: amount,
+      pay_by_date: payBy,
+      bank_account: bank,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
+  const subject = `Wairarapa Camera Club: Membership Application`
+  const html = `
+<p>Hi ${opts.firstName},</p>
+<p>Thank you for submitting a request to become a member of the Wairarapa Camera Club. We look forward to learning about photography with you!</p>
+<p>Your <strong>Membership Number is ${opts.membershipNumber}</strong>. Please take a note of this as you will need it to enter Club competitions.</p>
+<p>You indicated you would pay your ${opts.subsYear} membership subscription of <strong>${amount}</strong> by <strong>${payBy}</strong>. Note that your membership will only become active after we have received your payment. If paying online, the Club's bank account number is <strong>${bank}</strong>.</p>
+<p>If any of your details are incorrect, just reply to this email to let us know.</p>
+<p>Thanks again for applying to become a member.</p>
+<p>—<br>Wairarapa Camera Club</p>
+`
+  return { subject, html }
+}
+
+export async function newApplicationEmail(opts: {
+  applicantName: string
+  firstName: string
+  receivedAt: Date
+  payByDate: string | null
+}): Promise<{ subject: string; html: string }> {
+  const link = `${appUrl}/applicants`
+  const received = opts.receivedAt.toLocaleString('en-NZ', {
+    day: 'numeric', month: 'long', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZone: 'Pacific/Auckland',
+  })
+  const payBy = fmtDate(opts.payByDate)
+
+  const tmpl = await getEmailTemplate('new_application')
+  if (tmpl) {
+    const vars = {
+      applicant_name: opts.applicantName,
+      first_name: opts.firstName,
+      received_at: received,
+      pay_by_date: payBy,
+      review_link: makeButton(link, 'Review application'),
+      review_url: link,
+    }
+    return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
+  }
+
+  const subject = `New Membership Application Received for ${opts.applicantName}`
+  const html = `
+<p>A new membership application was received at ${received} from ${opts.firstName}.</p>
+<p><strong>${opts.firstName} has indicated they will pay their membership subscription by ${payBy}.</strong></p>
+<p>${makeButton(link, 'Review application')}</p>
+<p>When their payment has been received, record it through the Shutterbug Subscription Payments page to update their membership Status, Type and Paid Year.</p>
 <p>—<br>Wairarapa Camera Club</p>
 `
   return { subject, html }

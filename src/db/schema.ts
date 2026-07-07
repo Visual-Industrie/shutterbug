@@ -35,6 +35,8 @@ export const emailTypeEnum = pgEnum('email_type', [
   'subs_reminder',
   'one_off',
   'deadline_reminder',
+  'new_application',
+  'application_received',
 ])
 
 // ─── Members ──────────────────────────────────────────────────────────────────
@@ -74,6 +76,7 @@ export const applicants = pgTable('applicants', {
   lastName: text('last_name').notNull(),
   email: text('email').notNull(),
   phone: text('phone'),
+  membershipNumber: text('membership_number'),
   applicationDate: date('application_date').notNull().default(sql`CURRENT_DATE`),
   annualSubAmount: numeric('annual_sub_amount', { precision: 8, scale: 2 }),
   payByDate: date('pay_by_date'),

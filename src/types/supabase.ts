@@ -98,6 +98,7 @@ export type Database = {
           known_members: boolean
           landline: string | null
           last_name: string
+          membership_number: string | null
           notes: string | null
           pay_by_date: string | null
           payment_method: string | null
@@ -124,6 +125,7 @@ export type Database = {
           known_members?: boolean
           landline?: string | null
           last_name: string
+          membership_number?: string | null
           notes?: string | null
           pay_by_date?: string | null
           payment_method?: string | null
@@ -150,6 +152,7 @@ export type Database = {
           known_members?: boolean
           landline?: string | null
           last_name?: string
+          membership_number?: string | null
           notes?: string | null
           pay_by_date?: string | null
           payment_method?: string | null
@@ -1011,6 +1014,8 @@ export type Database = {
         | "subs_reminder"
         | "one_off"
         | "deadline_reminder"
+        | "new_application"
+        | "application_received"
       entry_type: "projim" | "printim"
       event_type: "competition" | "award" | "other"
       experience_level: "beginner" | "intermediate" | "advanced"
@@ -1172,6 +1177,8 @@ export const Constants = {
         "subs_reminder",
         "one_off",
         "deadline_reminder",
+        "new_application",
+        "application_received",
       ],
       entry_type: ["projim", "printim"],
       event_type: ["competition", "award", "other"],

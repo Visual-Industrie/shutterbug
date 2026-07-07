@@ -19,7 +19,7 @@ import {
   sendDeadlineReminders,
   sendDeadlineReminderToMember,
 } from './_lib/competition-actions.js'
-import { sendEmail, subsReminderEmail } from './_lib/email.js'
+import { sendEmail, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
@@ -1046,17 +1046,29 @@ app.post('/api/applicants', async (req, res) => {
   )
   if (existing.rows.length > 0) return void res.status(409).json({ error: 'An application with this email is already pending' })
 
+  // Assign the next membership number now (reused when converted to a member on
+  // payment). Draw from both members and pending applicants so numbers are unique.
+  const nextNumRes = await getPool().query(
+    `SELECT COALESCE(MAX(mn::integer), 0) + 1 AS next_number FROM (
+       SELECT membership_number AS mn FROM members
+       UNION ALL
+       SELECT membership_number AS mn FROM applicants
+     ) x WHERE mn ~ '^[0-9]+$'`,
+  )
+  const membershipNumber = String(nextNumRes.rows[0].next_number)
+
   const result = await getPool().query(
     `INSERT INTO applicants (
-       first_name, last_name, email, phone, landline, address,
+       first_name, last_name, email, phone, landline, address, membership_number,
        privacy_act_ok, image_use_ok, club_rules_ok, status, application_date,
        experience_level, photographic_interests, software, hear_about_us,
        known_members, facebook_invite, payment_method, pay_by_date
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,'pending',CURRENT_DATE,$9,$10,$11,$12,$13,$14,$15,$16)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,'pending',CURRENT_DATE,$10,$11,$12,$13,$14,$15,$16,$17)
      RETURNING id`,
     [
       first_name.trim(), last_name.trim(), email.trim().toLowerCase(),
       phone?.trim() || null, landline?.trim() || null, address?.trim() || null,
+      membershipNumber,
       true, true,
       experience_level || null, photographic_interests?.trim() || null,
       software?.trim() || null, hear_about_us || null,
@@ -1065,32 +1077,64 @@ app.post('/api/applicants', async (req, res) => {
     ],
   )
   const appId = result.rows[0].id
+  const applicantName = `${first_name.trim()} ${last_name.trim()}`
 
-  // Notify current Secretary and Treasurer via committee_members
+  // Confirmation email to the applicant
+  try {
+    const [subsAmountRes, bankRes, seasonRes] = await Promise.all([
+      getPool().query(`SELECT value, default_value FROM settings WHERE key = 'subs_amount'`),
+      getPool().query(`SELECT value, default_value FROM settings WHERE key = 'SUBS-BankAccount'`),
+      getPool().query(`SELECT year FROM seasons WHERE is_current_membership_year = true LIMIT 1`),
+    ])
+    const subsAmount = subsAmountRes.rows[0]?.value ?? subsAmountRes.rows[0]?.default_value ?? '50.00'
+    const bankAccount = bankRes.rows[0]?.value ?? bankRes.rows[0]?.default_value ?? ''
+    const subsYear = String(
+      seasonRes.rows[0]?.year ??
+      (pay_by_date ? new Date(pay_by_date).getFullYear() : new Date().getFullYear()),
+    )
+    const { subject, html } = await applicationReceivedEmail({
+      firstName: first_name.trim(),
+      membershipNumber,
+      subsYear,
+      subsAmount,
+      payByDate: pay_by_date || null,
+      bankAccount,
+    })
+    await sendEmail({
+      type: 'application_received',
+      to: email.trim().toLowerCase(),
+      toName: applicantName,
+      subject,
+      html,
+    })
+  } catch (err) {
+    console.error('Failed to send applicant confirmation', err)
+  }
+
+  // Notify current President, Secretary and Treasurer via committee_members
   try {
     const admins = await getPool().query(
       `SELECT m.email, m.first_name || ' ' || m.last_name AS name
        FROM committee_members cm
        JOIN committee_roles r ON r.id = cm.role_id
        JOIN members m ON m.id = cm.member_id
-       WHERE LOWER(r.name) IN ('secretary', 'treasurer')
-         AND cm.ends_at IS NULL`,
+       WHERE LOWER(r.name) IN ('president', 'secretary', 'treasurer')
+         AND cm.ends_at IS NULL
+         AND m.email NOT LIKE '%@privacy.wcc.local'`,
     )
-    const appUrl = process.env.APP_URL ?? 'https://shutterbug.wairarapacameraclub.org'
+    const { subject, html } = await newApplicationEmail({
+      applicantName,
+      firstName: first_name.trim(),
+      receivedAt: new Date(),
+      payByDate: pay_by_date || null,
+    })
+    // De-dupe in case one person holds multiple officer roles
+    const seen = new Set<string>()
     for (const admin of admins.rows) {
-      await sendEmail({
-        type: 'new_application',
-        to: admin.email,
-        toName: admin.name,
-        subject: `New membership application — ${first_name.trim()} ${last_name.trim()}`,
-        html: `<p>A new membership application has been received.</p>
-               <p><strong>Name:</strong> ${first_name.trim()} ${last_name.trim()}<br>
-               <strong>Email:</strong> ${email.trim()}<br>
-               <strong>Phone:</strong> ${phone?.trim() || '—'}<br>
-               <strong>Experience:</strong> ${experience_level || '—'}<br>
-               <strong>Payment method:</strong> ${payment_method || '—'}</p>
-               <p><a href="${appUrl}/applicants">View in Shutterbug →</a></p>`,
-      })
+      const to = (admin.email as string).toLowerCase()
+      if (seen.has(to)) continue
+      seen.add(to)
+      await sendEmail({ type: 'new_application', to, toName: admin.name, subject, html })
     }
   } catch (err) {
     console.error('Failed to send new application notification', err)
@@ -1125,14 +1169,20 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
   if (!ap) return void res.status(404).json({ error: 'Applicant not found or already processed' })
   const [nextNumRes, subsAmountRes] = await Promise.all([
     getPool().query(
-      `SELECT COALESCE(MAX(membership_number::integer), 0) + 1 AS next_number
-       FROM members WHERE membership_number ~ '^[0-9]+$'`,
+      `SELECT COALESCE(MAX(mn::integer), 0) + 1 AS next_number FROM (
+         SELECT membership_number AS mn FROM members
+         UNION ALL
+         SELECT membership_number AS mn FROM applicants
+       ) x WHERE mn ~ '^[0-9]+$'`,
     ),
     getPool().query(
       `SELECT value, default_value FROM settings WHERE key = 'subs_amount'`,
     ),
   ])
-  const membershipNumber = String(nextNumRes.rows[0].next_number)
+  // Reuse the number assigned at application time; fall back for legacy applicants.
+  const membershipNumber = /^[0-9]+$/.test(ap.membership_number ?? '')
+    ? String(ap.membership_number)
+    : String(nextNumRes.rows[0].next_number)
   const subsAmountRow = subsAmountRes.rows[0]
   const subsAmount = parseFloat(subsAmountRow?.value ?? subsAmountRow?.default_value ?? '50.00')
 

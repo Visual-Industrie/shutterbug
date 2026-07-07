@@ -1057,6 +1057,17 @@ export default function Settings() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Club bank account number</label>
+                <input
+                  type="text"
+                  value={subsDraft['SUBS-BankAccount'] ?? ''}
+                  onChange={e => { setSubsSaved(false); setSubsDraft(d => ({ ...d, 'SUBS-BankAccount': e.target.value })) }}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="12-3290-0055467-00"
+                />
+                <p className="text-xs text-gray-400 mt-1">Shown to new applicants in their confirmation email for paying their subscription.</p>
+              </div>
               <div className="flex items-center justify-between">
                 {subsSaved && <p className="text-sm text-green-600">Saved</p>}
                 {!subsSaved && <span />}

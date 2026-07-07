@@ -45,6 +45,7 @@ export const members = pgTable('members', {
   lastName: text('last_name').notNull(),
   email: text('email').notNull().unique(),
   phone: text('phone'),
+  address: text('address'),
   membershipNumber: text('membership_number').unique(),
   status: text('status').notNull().default('active'), // active | inactive | suspended
   membershipType: membershipTypeEnum('membership_type').notNull().default('full'),

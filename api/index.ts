@@ -897,7 +897,7 @@ app.post('/api/cron/process-automations', async (req, res) => {
 app.post('/api/members', async (req, res) => {
   if (!requireAuth(req, res)) return
   const {
-    first_name, last_name, email, phone, membership_number, status = 'active',
+    first_name, last_name, email, phone, address, membership_number, status = 'active',
     membership_type = 'full', experience_level, subs_paid = false, subs_due_date,
     joined_date, annual_sub_amount, privacy_act_ok = false, image_use_ok = false, club_rules_ok = false,
   } = req.body ?? {}
@@ -905,12 +905,12 @@ app.post('/api/members', async (req, res) => {
   if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
-    `INSERT INTO members (first_name,last_name,email,phone,membership_number,status,membership_type,
+    `INSERT INTO members (first_name,last_name,email,phone,address,membership_number,status,membership_type,
      experience_level,subs_paid,subs_due_date,annual_sub_amount,joined_date,
      privacy_act_ok,image_use_ok,club_rules_ok)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
     [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null,
-     membership_number?.trim() || null, status, membership_type, experience_level || null,
+     address?.trim() || null, membership_number?.trim() || null, status, membership_type, experience_level || null,
      subs_paid, subs_due_date || null, annual_sub_amount || null, joined_date || null,
      privacy_act_ok, image_use_ok, club_rules_ok],
   )
@@ -920,18 +920,18 @@ app.post('/api/members', async (req, res) => {
 app.patch('/api/members/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
   const {
-    first_name, last_name, email, phone, membership_number, status, membership_type,
+    first_name, last_name, email, phone, address, membership_number, status, membership_type,
     experience_level, subs_paid, subs_due_date, joined_date, annual_sub_amount,
   } = req.body ?? {}
   if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
   if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
-    `UPDATE members SET first_name=$1,last_name=$2,email=$3,phone=$4,membership_number=$5,
-     status=$6,membership_type=$7,experience_level=$8,subs_paid=$9,subs_due_date=$10,
-     joined_date=$11,annual_sub_amount=$12,updated_at=NOW() WHERE id=$13 RETURNING id`,
+    `UPDATE members SET first_name=$1,last_name=$2,email=$3,phone=$4,address=$5,membership_number=$6,
+     status=$7,membership_type=$8,experience_level=$9,subs_paid=$10,subs_due_date=$11,
+     joined_date=$12,annual_sub_amount=$13,updated_at=NOW() WHERE id=$14 RETURNING id`,
     [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null,
-     membership_number?.trim() || null, status, membership_type, experience_level || null,
+     address?.trim() || null, membership_number?.trim() || null, status, membership_type, experience_level || null,
      subs_paid ?? false, subs_due_date || null, joined_date || null, annual_sub_amount || null,
      req.params.id],
   )

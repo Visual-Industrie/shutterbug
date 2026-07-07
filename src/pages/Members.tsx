@@ -9,6 +9,7 @@ interface Member {
   last_name: string
   email: string
   phone: string | null
+  address: string | null
   membership_number: string | null
   status: string
   membership_type: string
@@ -33,6 +34,7 @@ interface MemberForm {
   last_name: string
   email: string
   phone: string
+  address: string
   membership_number: string
   status: string
   membership_type: string
@@ -44,7 +46,7 @@ interface MemberForm {
 }
 
 const EMPTY_FORM: MemberForm = {
-  first_name: '', last_name: '', email: '', phone: '',
+  first_name: '', last_name: '', email: '', phone: '', address: '',
   membership_number: '', status: 'active', membership_type: 'full',
   experience_level: '', subs_paid: false, subs_due_date: '', joined_date: '',
   annual_sub_amount: '',
@@ -92,7 +94,7 @@ export default function Members() {
     queryFn: async () => {
       const { data } = await supabase
         .from('members')
-        .select('id,first_name,last_name,email,phone,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
+        .select('id,first_name,last_name,email,phone,address,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
         .order('last_name', { ascending: true })
       return data ?? []
     },
@@ -198,6 +200,7 @@ export default function Members() {
       last_name: m.last_name,
       email: m.email,
       phone: m.phone ?? '',
+      address: m.address ?? '',
       membership_number: m.membership_number ?? '',
       status: m.status,
       membership_type: m.membership_type,
@@ -497,6 +500,10 @@ export default function Members() {
                   <input type="text" value={form.membership_number} onChange={e => setField('membership_number', e.target.value)} className={inputCls} />
                 </Field>
               </div>
+
+              <Field label="Address">
+                <textarea rows={2} value={form.address} onChange={e => setField('address', e.target.value)} className={inputCls} placeholder="Street, suburb, town, postcode" />
+              </Field>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Status">

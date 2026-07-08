@@ -202,6 +202,53 @@ app.post('/api/auth/set-password', async (req, res) => {
   }
 })
 
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body ?? {}
+  if (!email || typeof email !== 'string') {
+    return void res.status(400).json({ error: 'Email is required' })
+  }
+
+  try {
+    const result = await getPool().query(
+      `SELECT id, name, email FROM admin_users WHERE lower(email) = lower($1)`,
+      [email.trim()],
+    )
+    const admin = result.rows[0]
+
+    // Only issue a link when the account exists, but never reveal whether it did
+    // (prevents account enumeration). The response is the same either way.
+    if (admin) {
+      const resetToken = crypto.randomUUID()
+      const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+      await getPool().query(
+        `UPDATE admin_users SET invite_token = $1, invite_expires_at = $2 WHERE id = $3`,
+        [resetToken, resetExpiresAt, admin.id],
+      )
+
+      const appUrl = process.env.APP_URL ?? 'http://localhost:5173'
+      const resetLink = `${appUrl}/set-password?token=${resetToken}`
+      const firstName = String(admin.name).split(' ')[0]
+
+      const { sendEmail } = await import('./_lib/email.js')
+      await sendEmail({
+        type: 'one_off',
+        to: admin.email,
+        toName: admin.name,
+        subject: 'Reset your Shutterbug password',
+        html: `<p>Hi ${firstName},</p>
+<p>We received a request to reset your Shutterbug admin password.</p>
+<p><a href="${resetLink}">Click here to choose a new password</a></p>
+<p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email — your password won't change.</p>`,
+      })
+    }
+
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('POST /api/auth/forgot-password', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 app.get('/api/auth/me', (req, res) => {
   const auth = req.headers.authorization
   if (!auth?.startsWith('Bearer ')) return void res.status(401).json({ error: 'Unauthorized' })

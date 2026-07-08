@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
+import TiptapLink from '@tiptap/extension-link'
 import Lightbox, { driveImageUrl } from '@/components/Lightbox'
 
 interface Competition {
@@ -69,7 +69,7 @@ function CommentEditor({
   onBlur: (html: string) => void
 }) {
   const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false })],
+    extensions: [StarterKit, TiptapLink.configure({ openOnClick: false })],
     content: initialHtml ?? '',
     editorProps: {
       attributes: {

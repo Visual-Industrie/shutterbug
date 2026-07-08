@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
 import Lightbox, { driveImageUrl } from '@/components/Lightbox'
 
 interface Competition {
@@ -68,7 +69,7 @@ function CommentEditor({
   onBlur: (html: string) => void
 }) {
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Link.configure({ openOnClick: false })],
     content: initialHtml ?? '',
     editorProps: {
       attributes: {
@@ -77,6 +78,17 @@ function CommentEditor({
     },
     onBlur: ({ editor }) => onBlur(editor.getHTML()),
   })
+
+  function addLink() {
+    const previous = editor?.getAttributes('link').href ?? ''
+    const url = window.prompt('URL', previous)
+    if (url === null) return
+    if (url === '') {
+      editor?.chain().focus().extendMarkRange('link').unsetLink().run()
+      return
+    }
+    editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+  }
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -92,6 +104,18 @@ function CommentEditor({
           onMouseDown={e => { e.preventDefault(); editor?.chain().focus().toggleItalic().run() }}
           className={`px-2 py-0.5 rounded text-xs italic ${editor?.isActive('italic') ? 'bg-amber-100 text-amber-800' : 'text-gray-500 hover:bg-gray-200'}`}
         >I</button>
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); addLink() }}
+          className={`px-2 py-0.5 rounded text-xs ${editor?.isActive('link') ? 'bg-amber-100 text-amber-800' : 'text-gray-500 hover:bg-gray-200'}`}
+        >Link</button>
+        {editor?.isActive('link') && (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetLink().run() }}
+            className="px-2 py-0.5 rounded text-xs text-gray-400 hover:bg-gray-200"
+          >Unlink</button>
+        )}
       </div>
       <EditorContent editor={editor} />
     </div>

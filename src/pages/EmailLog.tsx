@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -100,7 +101,7 @@ function TemplateEditor({
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Link.configure({ openOnClick: false })],
     content: template.body_html,
     editable: canEdit,
     editorProps: {
@@ -138,6 +139,17 @@ function TemplateEditor({
     },
     onError: (err) => setSaveError(err instanceof Error ? err.message : 'Save failed'),
   })
+
+  function addLink() {
+    const previous = editor?.getAttributes('link').href ?? ''
+    const url = window.prompt('URL', previous)
+    if (url === null) return
+    if (url === '') {
+      editor?.chain().focus().extendMarkRange('link').unsetLink().run()
+      return
+    }
+    editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+  }
 
   const placeholders = TEMPLATE_PLACEHOLDERS[template.key] ?? []
 
@@ -189,6 +201,18 @@ function TemplateEditor({
               onClick={() => editor?.chain().focus().toggleBulletList().run()}
               className={`px-2 py-0.5 text-xs rounded ${editor?.isActive('bulletList') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}
             >• List</button>
+            <button
+              type="button"
+              onClick={addLink}
+              className={`px-2 py-0.5 text-xs rounded ${editor?.isActive('link') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}
+            >Link</button>
+            {editor?.isActive('link') && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().unsetLink().run()}
+                className="px-2 py-0.5 text-xs rounded hover:bg-gray-200 text-gray-400"
+              >Remove link</button>
+            )}
           </div>
         )}
         <div className={`border border-gray-300 ${canEdit ? 'rounded-b-lg border-t-0' : 'rounded-lg'} bg-white`}>

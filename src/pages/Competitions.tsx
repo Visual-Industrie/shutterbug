@@ -99,6 +99,17 @@ export default function Competitions() {
     },
   })
 
+  function addDescLink() {
+    const previous = descEditor?.getAttributes('link').href ?? ''
+    const url = window.prompt('URL', previous)
+    if (url === null) return
+    if (url === '') {
+      descEditor?.chain().focus().extendMarkRange('link').unsetLink().run()
+      return
+    }
+    descEditor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+  }
+
   const [deleteTarget, setDeleteTarget] = useState<Competition | null>(null)
 
   const { data: allComps = [], isLoading } = useQuery<Competition[]>({
@@ -384,6 +395,10 @@ export default function Competitions() {
                   <button type="button" onClick={() => descEditor?.chain().focus().toggleBold().run()} className={`px-2 py-0.5 text-xs rounded font-bold ${descEditor?.isActive('bold') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>B</button>
                   <button type="button" onClick={() => descEditor?.chain().focus().toggleItalic().run()} className={`px-2 py-0.5 text-xs rounded italic ${descEditor?.isActive('italic') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>I</button>
                   <button type="button" onClick={() => descEditor?.chain().focus().toggleBulletList().run()} className={`px-2 py-0.5 text-xs rounded ${descEditor?.isActive('bulletList') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>• List</button>
+                  <button type="button" onClick={addDescLink} className={`px-2 py-0.5 text-xs rounded ${descEditor?.isActive('link') ? 'bg-amber-200' : 'hover:bg-gray-200'}`}>Link</button>
+                  {descEditor?.isActive('link') && (
+                    <button type="button" onClick={() => descEditor.chain().focus().unsetLink().run()} className="px-2 py-0.5 text-xs rounded hover:bg-gray-200 text-gray-400">Remove link</button>
+                  )}
                 </div>
                 <div className="border border-gray-300 rounded-b-lg border-t-0 bg-white">
                   <EditorContent editor={descEditor} />

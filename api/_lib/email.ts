@@ -10,6 +10,15 @@ function buildFooterHtml(html: string): string {
   return `<div style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;">${html}</div>`
 }
 
+// Inline the club amber onto plain links (e.g. authored in the editor).
+// Links that already carry their own inline style — like the CTA buttons — are left untouched.
+function styleLinks(html: string): string {
+  return html.replace(
+    /<a\b(?![^>]*\bstyle=)([^>]*)>/gi,
+    '<a$1 style="color:#b45309;text-decoration:underline;">',
+  )
+}
+
 async function getFooterHtml(): Promise<string> {
   try {
     const res = await getPool().query(`SELECT value, default_value FROM settings WHERE key = 'email_footer'`)
@@ -40,7 +49,7 @@ export interface SendEmailOptions {
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   let error: string | null = null
 
-  const html = opts.html + await getFooterHtml()
+  const html = styleLinks(opts.html + await getFooterHtml())
 
   if (resend) {
     const result = await resend.emails.send({

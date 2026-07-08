@@ -48,7 +48,7 @@ export default function SetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white rounded-2xl shadow p-8 w-full max-w-sm">
         <h1 className="text-xl font-bold text-gray-900 mb-2">Set your password</h1>
-        <p className="text-sm text-gray-500 mb-6">Choose a password to activate your admin account.</p>
+        <p className="text-sm text-gray-500 mb-6">Choose a new password for your admin account.</p>
 
         {success ? (
           <div className="space-y-4 text-center">

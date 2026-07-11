@@ -1944,7 +1944,7 @@ app.get('/api/portal/open-competitions', async (req, res) => {
 
   const openRes = await getPool().query(
     `SELECT id, name, closes_at FROM competitions
-     WHERE status = 'open' AND event_type = 'competition'
+     WHERE status = 'open'
      ORDER BY closes_at ASC NULLS LAST, name ASC`,
   )
 

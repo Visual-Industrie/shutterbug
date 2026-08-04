@@ -9,6 +9,7 @@ interface Applicant {
   last_name: string
   email: string
   phone: string | null
+  membership_number: string | null
   application_date: string
   annual_sub_amount: string | null
   pay_by_date: string | null
@@ -50,7 +51,7 @@ export default function Applicants() {
     queryFn: async () => {
       const { data } = await supabase
         .from('applicants')
-        .select('id,first_name,last_name,email,phone,application_date,annual_sub_amount,pay_by_date,status')
+        .select('id,first_name,last_name,email,phone,membership_number,application_date,annual_sub_amount,pay_by_date,status')
         .order('application_date', { ascending: false })
       return data ?? []
     },
@@ -139,7 +140,10 @@ export default function Applicants() {
             <div key={a.id} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <div className="font-medium text-gray-900">{a.first_name} {a.last_name}</div>
+                  <div className="font-medium text-gray-900">
+                    {a.first_name} {a.last_name}
+                    {a.membership_number && <span className="text-gray-400 font-mono text-xs ml-1.5">#{a.membership_number}</span>}
+                  </div>
                   <div className="text-xs text-gray-500 mt-0.5">{a.email}</div>
                   {a.phone && <div className="text-xs text-gray-400">{a.phone}</div>}
                 </div>
@@ -190,6 +194,12 @@ export default function Applicants() {
             </div>
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <Field label="ID number">
+                <div className="px-3 py-1.5 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-500 font-mono">
+                  {editing.membership_number ?? '—'}
+                </div>
+              </Field>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First name *">
                   <input type="text" required value={form.first_name} onChange={e => setField('first_name', e.target.value)} className={inputCls} />

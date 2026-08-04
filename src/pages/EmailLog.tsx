@@ -287,7 +287,7 @@ export default function EmailLog() {
   const [toAddress, setToAddress] = useState('')
   const [replyTo, setReplyTo] = useState('')
   const [sending, setSending] = useState(false)
-  const [sendResult, setSendResult] = useState<{ sent: number; skipped: number } | null>(null)
+  const [sendResult, setSendResult] = useState<{ sent: number; skipped: number; errors?: string[] } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
 
   // Top-level rows only: a bulk send's per-member rows hang off its summary row
@@ -716,9 +716,18 @@ export default function EmailLog() {
               {sendError && <p className="text-sm text-red-600">{sendError}</p>}
 
               {sendResult && (
-                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
+                <div
+                  className={`border rounded-lg px-4 py-3 text-sm ${
+                    sendResult.skipped > 0
+                      ? 'bg-red-50 border-red-200 text-red-800'
+                      : 'bg-green-50 border-green-200 text-green-800'
+                  }`}
+                >
                   Sent to {sendResult.sent} member{sendResult.sent !== 1 ? 's' : ''}.
-                  {sendResult.skipped > 0 && ` ${sendResult.skipped} skipped.`}
+                  {sendResult.skipped > 0 && ` ${sendResult.skipped} not sent.`}
+                  {sendResult.errors?.map(err => (
+                    <div key={err} className="mt-1 text-xs">{err}</div>
+                  ))}
                 </div>
               )}
             </div>

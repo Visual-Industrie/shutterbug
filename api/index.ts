@@ -805,7 +805,7 @@ app.post('/api/email/send-bulk', async (req, res) => {
       }
     }
 
-    const { sent, skipped } = await sendBulkEmail({
+    const { sent, skipped, errors } = await sendBulkEmail({
       type: 'one_off',
       recipients: memberRows.map(m => ({ id: m.id, email: m.email, name: `${m.first_name} ${m.last_name}` })),
       subject: subject.trim(),
@@ -813,7 +813,7 @@ app.post('/api/email/send-bulk', async (req, res) => {
       toAddress: to_address?.trim() || null,
       replyTo: reply_to?.trim() || null,
     })
-    res.json({ sent, skipped })
+    res.json({ sent, skipped, errors })
   } catch (err) {
     console.error('POST /api/email/send-bulk', err)
     res.status(500).json({ error: (err as Error).message })

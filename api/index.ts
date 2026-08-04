@@ -751,11 +751,18 @@ app.get('/api/competitions/:id/download-entries', async (req, res) => {
 
 app.post('/api/email/send-bulk', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { recipients, member_id, subject, body } = req.body ?? {}
+  const { recipients, member_id, subject, body, to_address, reply_to } = req.body ?? {}
   if (!subject?.trim()) return void res.status(400).json({ error: 'Subject is required' })
   if (!body?.trim()) return void res.status(400).json({ error: 'Body is required' })
   if (!['all_active', 'subs_unpaid', 'member'].includes(recipients)) {
     return void res.status(400).json({ error: 'recipients must be all_active, subs_unpaid, or member' })
+  }
+  const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+  if (to_address?.trim() && !isEmail(to_address.trim())) {
+    return void res.status(400).json({ error: 'To address is not a valid email address' })
+  }
+  if (reply_to?.trim() && !isEmail(reply_to.trim())) {
+    return void res.status(400).json({ error: 'Reply-to is not a valid email address' })
   }
 
   try {
@@ -788,7 +795,10 @@ app.post('/api/email/send-bulk', async (req, res) => {
     if (recipients === 'member') {
       const m = memberRows[0]
       try {
-        await sendEmail({ type: 'one_off', to: m.email, toName: `${m.first_name} ${m.last_name}`, subject: subject.trim(), html, memberId: m.id })
+        await sendEmail({
+          type: 'one_off', to: m.email, toName: `${m.first_name} ${m.last_name}`,
+          subject: subject.trim(), html, memberId: m.id, replyTo: reply_to?.trim() || null,
+        })
         return void res.json({ sent: 1, skipped: 0 })
       } catch {
         return void res.json({ sent: 0, skipped: 1 })
@@ -800,6 +810,8 @@ app.post('/api/email/send-bulk', async (req, res) => {
       recipients: memberRows.map(m => ({ id: m.id, email: m.email, name: `${m.first_name} ${m.last_name}` })),
       subject: subject.trim(),
       html,
+      toAddress: to_address?.trim() || null,
+      replyTo: reply_to?.trim() || null,
     })
     res.json({ sent, skipped })
   } catch (err) {

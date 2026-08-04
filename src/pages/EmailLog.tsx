@@ -284,6 +284,8 @@ export default function EmailLog() {
   const [selectedMember, setSelectedMember] = useState<MemberOption | null>(null)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  const [toAddress, setToAddress] = useState('')
+  const [replyTo, setReplyTo] = useState('')
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<{ sent: number; skipped: number } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
@@ -327,11 +329,32 @@ export default function EmailLog() {
     else membersByBatch.set(m.batch_id, [m])
   }
 
+  // Configured default To / Reply-to, used to prefill the composer.
+  const { data: emailSettings = [] } = useQuery<{ key: string; value: string | null; default_value: string | null }[]>({
+    queryKey: ['settings', 'email'],
+    queryFn: () => apiFetch('/api/settings?section=EMAIL'),
+  })
+  const settingValue = (key: string) => {
+    const row = emailSettings.find(r => r.key === key)
+    return (row?.value ?? row?.default_value ?? '').trim()
+  }
+  const defaultToAddress = settingValue('email_bulk_to')
+  const defaultReplyTo = settingValue('email_reply_to')
+
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['email-templates'],
     queryFn: () => apiFetch<EmailTemplate[]>('/api/email-templates'),
     enabled: tab === 'templates',
   })
+
+  // Keep the composer's defaults in step with the settings while it's closed, so
+  // opening it always shows current values even if settings loaded late.
+  useEffect(() => {
+    if (!showCompose) {
+      setToAddress(defaultToAddress)
+      setReplyTo(defaultReplyTo)
+    }
+  }, [defaultToAddress, defaultReplyTo, showCompose])
 
   // Auto-select first template when list loads
   useEffect(() => {
@@ -381,6 +404,8 @@ export default function EmailLog() {
     setSelectedMember(null)
     setSubject('')
     setBody('')
+    setToAddress(defaultToAddress)
+    setReplyTo(defaultReplyTo)
     setSendResult(null)
     setSendError(null)
     setShowCompose(true)
@@ -402,6 +427,9 @@ export default function EmailLog() {
           member_id: recipients === 'member' ? selectedMember?.id : undefined,
           subject: subject.trim(),
           body: body.trim(),
+          // To only applies to a BCC'd group send; a single member is addressed directly.
+          to_address: recipients === 'member' ? undefined : toAddress.trim() || undefined,
+          reply_to: replyTo.trim() || undefined,
         }),
       })
       setSendResult(result)
@@ -628,6 +656,36 @@ export default function EmailLog() {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* To — group sends only; a single member is addressed directly */}
+              {recipients !== 'member' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+                  <input
+                    type="email"
+                    value={toAddress}
+                    onChange={e => setToAddress(e.target.value)}
+                    className={inputCls}
+                    placeholder={defaultToAddress || 'compsecwaicamc@gmail.com'}
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Members are BCC'd, so this is the only address they'll see.
+                  </p>
+                </div>
+              )}
+
+              {/* Reply-to — applies to every send */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reply to</label>
+                <input
+                  type="email"
+                  value={replyTo}
+                  onChange={e => setReplyTo(e.target.value)}
+                  className={inputCls}
+                  placeholder={defaultReplyTo || 'compsecwaicamc@gmail.com'}
+                />
+                <p className="mt-1 text-xs text-gray-400">Where replies are delivered.</p>
               </div>
 
               {/* Subject */}

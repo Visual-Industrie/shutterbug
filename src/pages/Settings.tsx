@@ -264,6 +264,72 @@ function EmailFooterInner({ initialHtml }: { initialHtml: string }) {
   )
 }
 
+function EmailAddressSettings({ rows }: { rows: SettingRow[] }) {
+  const queryClient = useQueryClient()
+  const [saved, setSaved] = useState(false)
+
+  const initial = (key: string) => {
+    const row = rows.find(r => r.key === key)
+    return row?.value ?? row?.default_value ?? ''
+  }
+  const [bulkTo, setBulkTo] = useState(() => initial('email_bulk_to'))
+  const [replyTo, setReplyTo] = useState(() => initial('email_reply_to'))
+
+  const saveMutation = useMutation({
+    mutationFn: (d: Record<string, string>) =>
+      apiFetch('/api/settings', { method: 'PATCH', body: JSON.stringify(d) }),
+    onSuccess: () => {
+      setSaved(true)
+      queryClient.invalidateQueries({ queryKey: ['settings', 'email'] })
+    },
+  })
+
+  const fieldCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">Email addresses</h2>
+      <p className="text-xs text-gray-400 mb-4">Defaults for outgoing mail. Both can be changed per send from the composer.</p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Bulk email "To" address</label>
+          <input
+            type="email"
+            value={bulkTo}
+            onChange={e => { setBulkTo(e.target.value); setSaved(false) }}
+            className={fieldCls}
+          />
+          <p className="mt-1 text-xs text-gray-400">Members are BCC'd on group sends, so this is the only recipient they see.</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Reply-to address</label>
+          <input
+            type="email"
+            value={replyTo}
+            onChange={e => { setReplyTo(e.target.value); setSaved(false) }}
+            className={fieldCls}
+          />
+          <p className="mt-1 text-xs text-gray-400">Applies to every email the system sends, including automated ones.</p>
+        </div>
+      </div>
+
+      {saveMutation.error && <p className="mt-2 text-sm text-red-600">{(saveMutation.error as Error).message}</p>}
+      <div className="flex items-center justify-between mt-4">
+        {saved ? <p className="text-sm text-green-600">Saved</p> : <span />}
+        <button
+          onClick={() => saveMutation.mutate({ email_bulk_to: bulkTo.trim(), email_reply_to: replyTo.trim() })}
+          disabled={saveMutation.isPending}
+          className="px-5 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+        >
+          {saveMutation.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function EmailFooterEditor() {
   const { data: rows, isLoading } = useQuery<SettingRow[]>({
     queryKey: ['settings', 'email'],
@@ -275,7 +341,17 @@ function EmailFooterEditor() {
   const row = rows?.find(r => r.key === 'email_footer')
   const initialHtml = row?.value ?? row?.default_value ?? ''
 
-  return <EmailFooterInner key={initialHtml} initialHtml={initialHtml} />
+  return (
+    <div className="space-y-4">
+      <EmailAddressSettings key={`${initial(rows, 'email_bulk_to')}|${initial(rows, 'email_reply_to')}`} rows={rows ?? []} />
+      <EmailFooterInner key={initialHtml} initialHtml={initialHtml} />
+    </div>
+  )
+}
+
+function initial(rows: SettingRow[] | undefined, key: string) {
+  const row = rows?.find(r => r.key === key)
+  return row?.value ?? row?.default_value ?? ''
 }
 
 // ── Automations tab ───────────────────────────────────────────────────────────

@@ -93,7 +93,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 const HTML_RAW_KEYS = new Set([
   'submission_link', 'judging_link', 'history_link', 'review_link',
   'results_table', 'entry_summary', 'submitted_entries',
-  'competition_description',
+  'competition_description', 'judged_by_line',
 ])
 
 function htmlEsc(s: string): string {
@@ -389,16 +389,22 @@ ${defaultIntro}
 export async function resultsNotificationEmail(opts: {
   memberName: string
   competitionName: string
-  entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null }>
+  entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null; judgeName?: string | null }>
   token: string
+  /** Judge(s) for the competition, used for [judge_name] and as a per-entry fallback. */
+  judgeName?: string | null
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/portal/${opts.token}`
 
   const rows = opts.entries.map(e => {
     const award = e.award ? e.award.replace(/_/g, ' ') : 'Not placed'
     const pts = e.points != null ? ` (${e.points} pts)` : ''
-    const comment = e.comment
-      ? `<tr><td colspan="3" style="padding:4px 8px 10px 8px;color:#6b7280;font-style:italic;font-size:13px;border-bottom:1px solid #f0f0f0">${e.comment}</td></tr>`
+    const judge = e.judgeName ?? opts.judgeName ?? null
+    const attribution = judge
+      ? `<div style="margin-top:4px;font-style:normal;color:#9ca3af;font-size:12px">— ${htmlEsc(judge)}</div>`
+      : ''
+    const comment = (e.comment || attribution)
+      ? `<tr><td colspan="3" style="padding:4px 8px 10px 8px;color:#6b7280;font-style:italic;font-size:13px;border-bottom:1px solid #f0f0f0">${e.comment ?? ''}${attribution}</td></tr>`
       : ''
     return `<tr>
       <td style="padding:6px 8px 4px 8px">${e.title}</td>
@@ -406,6 +412,16 @@ export async function resultsNotificationEmail(opts: {
       <td style="padding:6px 8px 4px 8px;text-transform:capitalize;font-weight:bold">${award}${pts}</td>
     </tr>${comment}`
   }).join('')
+
+  // Distinct judge names across this member's entries, falling back to the
+  // competition's assigned judge(s). Drives the [judge_name] placeholder.
+  const judgeNames = Array.from(
+    new Set(opts.entries.map(e => e.judgeName).filter((n): n is string => !!n)),
+  )
+  const judgedBy = judgeNames.length > 0 ? judgeNames.join(' & ') : (opts.judgeName ?? '')
+  const judgedByLine = judgedBy
+    ? `<p>This competition was judged by <strong>${htmlEsc(judgedBy)}</strong>.</p>`
+    : ''
 
   const resultsTable = `<table style="border-collapse:collapse;width:100%;max-width:500px">
   <thead>
@@ -423,6 +439,8 @@ export async function resultsNotificationEmail(opts: {
     const vars = {
       member_name: opts.memberName,
       competition_name: opts.competitionName,
+      judge_name: judgedBy,
+      judged_by_line: judgedByLine,
       results_table: resultsTable,
       history_link: makeButton(link, 'View full history'),
       history_url: link,
@@ -434,6 +452,7 @@ export async function resultsNotificationEmail(opts: {
   const html = `
 <p>Hi ${opts.memberName},</p>
 <p>Results are in for <strong>${opts.competitionName}</strong>!</p>
+${judgedByLine}
 ${resultsTable}
 <p>${makeButton(link, 'View full history')}</p>
 <p>—<br>Wairarapa Camera Club</p>

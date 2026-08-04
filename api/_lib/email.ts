@@ -3,7 +3,6 @@ import { getPool } from './db.js'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = 'Wairarapa Camera Club <noreply@wairarapacameraclub.org>'
-const FROM_EMAIL = 'noreply@wairarapacameraclub.org'
 
 const DEFAULT_FOOTER_TEXT = `<p>Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>`
 
@@ -31,6 +30,24 @@ async function getFooterHtml(): Promise<string> {
   }
 }
 
+// Fallbacks for when the settings row is missing or the lookup fails — the club
+// address is a safer landing spot for replies than the unattended noreply box.
+const DEFAULT_CLUB_EMAIL = 'compsecwaicamc@gmail.com'
+
+async function getAddressSetting(key: string): Promise<string> {
+  try {
+    const res = await getPool().query(`SELECT value, default_value FROM settings WHERE key = $1`, [key])
+    const row = res.rows[0]
+    const addr = (row?.value ?? row?.default_value ?? '').trim()
+    return addr || DEFAULT_CLUB_EMAIL
+  } catch {
+    return DEFAULT_CLUB_EMAIL
+  }
+}
+
+export const getBulkToAddress = () => getAddressSetting('email_bulk_to')
+export const getReplyToAddress = () => getAddressSetting('email_reply_to')
+
 export interface SendEmailOptions {
   type: string
   to: string
@@ -41,6 +58,8 @@ export interface SendEmailOptions {
   judgeId?: string | null
   competitionId?: string | null
   tokenId?: string | null
+  /** Overrides the configured reply-to for this send. */
+  replyTo?: string | null
 }
 
 /**
@@ -51,11 +70,13 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   let error: string | null = null
 
   const html = styleLinks(opts.html + await getFooterHtml())
+  const replyTo = opts.replyTo?.trim() || await getReplyToAddress()
 
   if (resend) {
     const result = await resend.emails.send({
       from: FROM,
       to: opts.toName ? `${opts.toName} <${opts.to}>` : opts.to,
+      replyTo,
       subject: opts.subject,
       html,
     })
@@ -65,8 +86,9 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   } else {
     // Dev mode: print to console instead of sending
     console.log(`\n[EMAIL – no RESEND_API_KEY set]`)
-    console.log(`To:      ${opts.toName ? `${opts.toName} <${opts.to}>` : opts.to}`)
-    console.log(`Subject: ${opts.subject}`)
+    console.log(`To:       ${opts.toName ? `${opts.toName} <${opts.to}>` : opts.to}`)
+    console.log(`Reply-To: ${replyTo}`)
+    console.log(`Subject:  ${opts.subject}`)
     console.log(`Body:\n${html}\n`)
   }
 
@@ -106,6 +128,10 @@ export interface SendBulkEmailOptions {
   subject: string
   html: string
   competitionId?: string | null
+  /** Visible To address; defaults to the configured bulk-to setting. */
+  toAddress?: string | null
+  /** Overrides the configured reply-to for this send. */
+  replyTo?: string | null
 }
 
 export interface SendBulkEmailResult {
@@ -130,6 +156,8 @@ function chunk<T>(items: T[], size: number): T[][] {
  */
 export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBulkEmailResult> {
   const html = styleLinks(opts.html + await getFooterHtml())
+  const toAddress = opts.toAddress?.trim() || await getBulkToAddress()
+  const replyTo = opts.replyTo?.trim() || await getReplyToAddress()
   const pool = getPool()
   let sent = 0, skipped = 0
   const batches = chunk(opts.recipients, BCC_BATCH_SIZE)
@@ -141,10 +169,11 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
       try {
         const result = await resend.emails.send({
           from: FROM,
-          // Resend requires a `to`; the club's own address takes it so that the
-          // entire membership stays hidden in bcc.
-          to: FROM,
+          // Resend requires a `to`; a club address takes it so that the entire
+          // membership stays hidden in bcc.
+          to: toAddress,
           bcc: batch.map(r => (r.name ? `${r.name} <${r.email}>` : r.email)),
+          replyTo,
           subject: opts.subject,
           html,
         })
@@ -155,8 +184,10 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
     } else {
       // Dev mode: print to console instead of sending
       console.log(`\n[BULK EMAIL – no RESEND_API_KEY set]`)
-      console.log(`Bcc:     ${batch.length} recipient(s): ${batch.map(r => r.email).join(', ')}`)
-      console.log(`Subject: ${opts.subject}`)
+      console.log(`To:       ${toAddress}`)
+      console.log(`Reply-To: ${replyTo}`)
+      console.log(`Bcc:      ${batch.length} recipient(s): ${batch.map(r => r.email).join(', ')}`)
+      console.log(`Subject:  ${opts.subject}`)
       console.log(`Body:\n${html}\n`)
     }
 
@@ -169,7 +200,7 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
         opts.type,
-        FROM_EMAIL,
+        toAddress,
         `${batch.length} recipient${batch.length === 1 ? '' : 's'} (BCC)`,
         opts.competitionId ?? null,
         opts.subject,

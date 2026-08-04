@@ -10,6 +10,7 @@ export interface HistoryEntry {
   title: string
   award: string | null
   judgeComment: string | null
+  judgeName: string | null
   pointsAwarded: number | null
   driveThumbnailUrl: string | null
   driveFileUrl: string | null
@@ -58,6 +59,16 @@ export async function getMemberHistory(tokenValue: string): Promise<MemberHistor
        e.title,
        e.award,
        e.judge_comment AS "judgeComment",
+       -- Prefer the judge who actually scored the entry; fall back to the
+       -- competition's assigned judge(s) for older imported entries where
+       -- judged_by was never recorded.
+       COALESCE(
+         j.name,
+         (SELECT string_agg(cj_j.name, ' & ' ORDER BY cj_j.name)
+            FROM competition_judges cj
+            JOIN judges cj_j ON cj_j.id = cj.judge_id
+           WHERE cj.competition_id = c.id)
+       ) AS "judgeName",
        e.points_awarded AS "pointsAwarded",
        e.drive_thumbnail_url AS "driveThumbnailUrl",
        e.drive_file_url AS "driveFileUrl",
@@ -65,6 +76,7 @@ export async function getMemberHistory(tokenValue: string): Promise<MemberHistor
      FROM entries e
      JOIN competitions c ON c.id = e.competition_id
      JOIN seasons s ON s.id = c.season_id
+     LEFT JOIN judges j ON j.id = e.judged_by
      WHERE e.member_id = $1
        AND e.judged_at IS NOT NULL
      ORDER BY s.year DESC, c.opens_at DESC, e.submitted_at ASC`,

@@ -352,6 +352,17 @@ export async function sendResults(competitionId: string): Promise<{
   if (!comp) throw new Error('Competition not found')
   if (comp.status !== 'complete') throw new Error('Competition is not complete yet')
 
+  // Judge(s) assigned to the competition — used where an entry has no
+  // judged_by recorded (e.g. entries imported from the old system).
+  const compJudgesRes = await pool.query(
+    `SELECT j.name FROM competition_judges cj
+     JOIN judges j ON j.id = cj.judge_id
+     WHERE cj.competition_id = $1
+     ORDER BY j.name`,
+    [competitionId],
+  )
+  const compJudgeName = compJudgesRes.rows.map((r: { name: string }) => r.name).join(' & ') || null
+
   const membersRes = await pool.query(
     `SELECT DISTINCT m.id, m.first_name, m.last_name, m.email
      FROM members m
@@ -367,18 +378,22 @@ export async function sendResults(competitionId: string): Promise<{
   for (const m of membersRes.rows) {
     try {
       const entriesRes = await pool.query(
-        `SELECT type, title, award, points_awarded, judge_comment FROM entries
-         WHERE competition_id = $1 AND member_id = $2`,
+        `SELECT e.type, e.title, e.award, e.points_awarded, e.judge_comment, j.name AS judge_name
+         FROM entries e
+         LEFT JOIN judges j ON j.id = e.judged_by
+         WHERE e.competition_id = $1 AND e.member_id = $2`,
         [competitionId, m.id],
       )
       const historyTok = await upsertHistoryToken(m.id)
       const { subject, html } = await resultsNotificationEmail({
         memberName: `${m.first_name} ${m.last_name}`,
         competitionName: comp.name,
-        entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null; judge_comment: string | null }) => ({
+        entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null; judge_comment: string | null; judge_name: string | null }) => ({
           title: e.title, type: e.type, award: e.award, points: e.points_awarded, comment: e.judge_comment,
+          judgeName: e.judge_name ?? compJudgeName,
         })),
         token: historyTok.token,
+        judgeName: compJudgeName,
       })
       await sendEmail({
         type: 'results_notification',

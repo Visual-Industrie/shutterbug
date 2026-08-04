@@ -9,6 +9,7 @@ export interface HistoryEntry {
   title: string
   award: string | null
   judgeComment: string | null
+  judgeName: string | null
   pointsAwarded: number | null
   driveThumbnailUrl: string | null
   driveFileUrl: string | null
@@ -173,12 +174,21 @@ export default function MemberHistoryView({ data }: { data: MemberHistoryData })
                             </div>
                           </div>
 
-                          {/* Judge comment (raw HTML from TipTap) */}
-                          {e.judgeComment && (
-                            <div
-                              className="mt-2 ml-[3.75rem] text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{ __html: e.judgeComment }}
-                            />
+                          {/* Judge comment (raw HTML from TipTap) + judge attribution */}
+                          {(e.judgeComment || e.judgeName) && (
+                            <div className="mt-2 ml-[3.75rem]">
+                              {e.judgeComment && (
+                                <div
+                                  className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ __html: e.judgeComment }}
+                                />
+                              )}
+                              {e.judgeName && (
+                                <div className="mt-1 text-xs text-gray-400">
+                                  Judged by {e.judgeName}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}

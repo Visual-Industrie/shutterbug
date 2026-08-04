@@ -3,6 +3,7 @@ import { getPool } from './db.js'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = 'Wairarapa Camera Club <noreply@wairarapacameraclub.org>'
+const FROM_EMAIL = 'noreply@wairarapacameraclub.org'
 
 const DEFAULT_FOOTER_TEXT = `<p>Do not reply to this email. To contact the Competition Secretary, use <a href="mailto:compsecwaicamc@gmail.com">compsecwaicamc@gmail.com</a>. All other committee email addresses are on our website.</p>`
 
@@ -85,6 +86,111 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       error,
     ],
   )
+}
+
+// ─── Bulk (BCC) send ──────────────────────────────────────────────────────────
+
+// Resend accepts at most 50 recipients across to/cc/bcc on a single message,
+// so a larger group is split into several BCC'd sends.
+const BCC_BATCH_SIZE = 50
+
+export interface BulkRecipient {
+  id?: string | null
+  email: string
+  name?: string | null
+}
+
+export interface SendBulkEmailOptions {
+  type: string
+  recipients: BulkRecipient[]
+  subject: string
+  html: string
+  competitionId?: string | null
+}
+
+export interface SendBulkEmailResult {
+  sent: number
+  skipped: number
+  batches: number
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/**
+ * Sends one identical email per batch of up to 50 recipients, with every member
+ * BCC'd so nobody sees anyone else's address. Only safe for bodies with no
+ * per-member personalisation — personalised mail must still go via sendEmail().
+ *
+ * Writes a summary row to email_log per batch, plus a child row per recipient
+ * (linked by batch_id) so the per-member audit trail and search still work.
+ */
+export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBulkEmailResult> {
+  const html = styleLinks(opts.html + await getFooterHtml())
+  const pool = getPool()
+  let sent = 0, skipped = 0
+  const batches = chunk(opts.recipients, BCC_BATCH_SIZE)
+
+  for (const batch of batches) {
+    let error: string | null = null
+
+    if (resend) {
+      try {
+        const result = await resend.emails.send({
+          from: FROM,
+          // Resend requires a `to`; the club's own address takes it so that the
+          // entire membership stays hidden in bcc.
+          to: FROM,
+          bcc: batch.map(r => (r.name ? `${r.name} <${r.email}>` : r.email)),
+          subject: opts.subject,
+          html,
+        })
+        if (result.error) error = result.error.message
+      } catch (err) {
+        error = (err as Error).message
+      }
+    } else {
+      // Dev mode: print to console instead of sending
+      console.log(`\n[BULK EMAIL – no RESEND_API_KEY set]`)
+      console.log(`Bcc:     ${batch.length} recipient(s): ${batch.map(r => r.email).join(', ')}`)
+      console.log(`Subject: ${opts.subject}`)
+      console.log(`Body:\n${html}\n`)
+    }
+
+    if (error) skipped += batch.length
+    else sent += batch.length
+
+    // Summary row for the message actually sent…
+    const summary = await pool.query(
+      `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, error, recipient_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [
+        opts.type,
+        FROM_EMAIL,
+        `${batch.length} recipient${batch.length === 1 ? '' : 's'} (BCC)`,
+        opts.competitionId ?? null,
+        opts.subject,
+        opts.html,
+        error,
+        batch.length,
+      ],
+    )
+    const batchId: string = summary.rows[0].id
+
+    // …and a child row per member, preserving the per-member trail.
+    for (const r of batch) {
+      await pool.query(
+        `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, competition_id, subject, body, error, batch_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [opts.type, r.email, r.name ?? null, r.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
+      )
+    }
+  }
+
+  return { sent, skipped, batches: batches.length }
 }
 
 // ─── Template engine ──────────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ import {
   sendDeadlineReminders,
   sendDeadlineReminderToMember,
 } from './_lib/competition-actions.js'
-import { sendEmail, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
+import { sendEmail, sendBulkEmail, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
@@ -783,13 +783,24 @@ app.post('/api/email/send-bulk', async (req, res) => {
       .map((p: string) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('\n')
     const html = `${htmlBody}\n<p>—<br>Wairarapa Camera Club</p>`
 
-    let sent = 0, skipped = 0
-    for (const m of memberRows) {
+    // A single member gets an ordinary addressed email; a group goes out as one
+    // BCC'd send per batch so members neither see each other nor get N copies.
+    if (recipients === 'member') {
+      const m = memberRows[0]
       try {
         await sendEmail({ type: 'one_off', to: m.email, toName: `${m.first_name} ${m.last_name}`, subject: subject.trim(), html, memberId: m.id })
-        sent++
-      } catch { skipped++ }
+        return void res.json({ sent: 1, skipped: 0 })
+      } catch {
+        return void res.json({ sent: 0, skipped: 1 })
+      }
     }
+
+    const { sent, skipped } = await sendBulkEmail({
+      type: 'one_off',
+      recipients: memberRows.map(m => ({ id: m.id, email: m.email, name: `${m.first_name} ${m.last_name}` })),
+      subject: subject.trim(),
+      html,
+    })
     res.json({ sent, skipped })
   } catch (err) {
     console.error('POST /api/email/send-bulk', err)

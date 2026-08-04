@@ -112,9 +112,11 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 // ─── Bulk (BCC) send ──────────────────────────────────────────────────────────
 
-// Resend accepts at most 50 recipients across to/cc/bcc on a single message,
-// so a larger group is split into several BCC'd sends.
-const BCC_BATCH_SIZE = 50
+// Resend caps a single message at 50 recipients counted across to/cc/bcc.
+// Every bulk message already spends one of those on the visible To address, so
+// only 49 are left for members — a larger group is split across several sends.
+const MAX_RECIPIENTS_PER_MESSAGE = 50
+const BCC_BATCH_SIZE = MAX_RECIPIENTS_PER_MESSAGE - 1 // reserve the To slot
 
 export interface BulkRecipient {
   id?: string | null
@@ -138,6 +140,8 @@ export interface SendBulkEmailResult {
   sent: number
   skipped: number
   batches: number
+  /** Distinct provider errors, so a failed send explains itself to the caller. */
+  errors: string[]
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -160,6 +164,7 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
   const replyTo = opts.replyTo?.trim() || await getReplyToAddress()
   const pool = getPool()
   let sent = 0, skipped = 0
+  const errors = new Set<string>()
   const batches = chunk(opts.recipients, BCC_BATCH_SIZE)
 
   for (const batch of batches) {
@@ -191,8 +196,12 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
       console.log(`Body:\n${html}\n`)
     }
 
-    if (error) skipped += batch.length
-    else sent += batch.length
+    if (error) {
+      skipped += batch.length
+      errors.add(error)
+    } else {
+      sent += batch.length
+    }
 
     // Summary row for the message actually sent…
     const summary = await pool.query(
@@ -221,7 +230,7 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
     }
   }
 
-  return { sent, skipped, batches: batches.length }
+  return { sent, skipped, batches: batches.length, errors: [...errors] }
 }
 
 // ─── Template engine ──────────────────────────────────────────────────────────

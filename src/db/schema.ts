@@ -11,6 +11,7 @@ import {
   unique,
   index,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
@@ -293,6 +294,11 @@ export const emailLog = pgTable('email_log', {
   body: text('body'), // store body for admin email log UI
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
   error: text('error'),
+  // Bulk sends write one summary row (recipientCount set) plus one child row per
+  // member (batchId → summary). NULL on both for ordinary one-to-one emails.
+  batchId: uuid('batch_id').references((): AnyPgColumn => emailLog.id, { onDelete: 'cascade' }),
+  recipientCount: integer('recipient_count'),
 }, (t) => [
   index('idx_email_log_member').on(t.memberId),
+  index('idx_email_log_batch').on(t.batchId),
 ])

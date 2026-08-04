@@ -409,12 +409,14 @@ export type Database = {
       }
       email_log: {
         Row: {
+          batch_id: string | null
           body: string | null
           competition_id: string | null
           error: string | null
           id: string
           judge_id: string | null
           member_id: string | null
+          recipient_count: number | null
           recipient_email: string
           recipient_name: string | null
           sent_at: string
@@ -423,12 +425,14 @@ export type Database = {
           type: Database["public"]["Enums"]["email_type"]
         }
         Insert: {
+          batch_id?: string | null
           body?: string | null
           competition_id?: string | null
           error?: string | null
           id?: string
           judge_id?: string | null
           member_id?: string | null
+          recipient_count?: number | null
           recipient_email: string
           recipient_name?: string | null
           sent_at?: string
@@ -437,12 +441,14 @@ export type Database = {
           type: Database["public"]["Enums"]["email_type"]
         }
         Update: {
+          batch_id?: string | null
           body?: string | null
           competition_id?: string | null
           error?: string | null
           id?: string
           judge_id?: string | null
           member_id?: string | null
+          recipient_count?: number | null
           recipient_email?: string
           recipient_name?: string | null
           sent_at?: string
@@ -451,6 +457,13 @@ export type Database = {
           type?: Database["public"]["Enums"]["email_type"]
         }
         Relationships: [
+          {
+            foreignKeyName: "email_log_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "email_log"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "email_log_competition_id_fkey"
             columns: ["competition_id"]

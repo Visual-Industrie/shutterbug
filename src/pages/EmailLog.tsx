@@ -288,17 +288,44 @@ export default function EmailLog() {
   const [sendResult, setSendResult] = useState<{ sent: number; skipped: number } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
 
+  // Top-level rows only: a bulk send's per-member rows hang off its summary row
+  // via batch_id and are loaded separately, so one group email takes one slot here.
   const { data: allEmails = [], isLoading: logLoading } = useQuery({
     queryKey: ['emails'],
     queryFn: async () => {
       const { data } = await supabase
         .from('email_log')
-        .select('id,type,recipient_email,recipient_name,subject,body,sent_at,error')
+        .select('id,type,recipient_email,recipient_name,subject,body,sent_at,error,recipient_count')
+        .is('batch_id', null)
         .order('sent_at', { ascending: false })
         .limit(200)
       return data ?? []
     },
   })
+
+  const batchIds = allEmails.filter(e => e.recipient_count != null).map(e => e.id)
+
+  // Children of the listed batches, so recipient search and the expanded
+  // recipient list both work without a round-trip per row.
+  const { data: batchMembers = [] } = useQuery({
+    queryKey: ['email-batch-members', batchIds],
+    enabled: batchIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('email_log')
+        .select('id,batch_id,recipient_email,recipient_name,error')
+        .in('batch_id', batchIds)
+      return data ?? []
+    },
+  })
+
+  const membersByBatch = new Map<string, typeof batchMembers>()
+  for (const m of batchMembers) {
+    if (!m.batch_id) continue
+    const list = membersByBatch.get(m.batch_id)
+    if (list) list.push(m)
+    else membersByBatch.set(m.batch_id, [m])
+  }
 
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['email-templates'],
@@ -316,10 +343,13 @@ export default function EmailLog() {
   const emails = search
     ? allEmails.filter(e => {
         const q = search.toLowerCase()
+        // A bulk send also matches on any of the members it was BCC'd to.
+        const matchesRecipient = (email: string, name: string | null) =>
+          email.toLowerCase().includes(q) || (name ?? '').toLowerCase().includes(q)
         return (
           e.subject.toLowerCase().includes(q) ||
-          e.recipient_email.toLowerCase().includes(q) ||
-          (e.recipient_name ?? '').toLowerCase().includes(q)
+          matchesRecipient(e.recipient_email, e.recipient_name) ||
+          (membersByBatch.get(e.id) ?? []).some(m => matchesRecipient(m.recipient_email, m.recipient_name))
         )
       })
     : allEmails
@@ -465,6 +495,16 @@ export default function EmailLog() {
                       <div className="text-xs text-gray-500">
                         <span className="font-medium">To:</span> {e.recipient_email}
                       </div>
+                      {e.recipient_count != null && (
+                        <div className="text-xs text-gray-500">
+                          <span className="font-medium">Bcc:</span>{' '}
+                          {(membersByBatch.get(e.id) ?? []).length
+                            ? (membersByBatch.get(e.id) ?? [])
+                                .map(m => m.recipient_name ?? m.recipient_email)
+                                .join(', ')
+                            : `${e.recipient_count} recipient${e.recipient_count === 1 ? '' : 's'}`}
+                        </div>
+                      )}
                       {e.error && (
                         <div className="text-xs text-red-600 bg-red-50 rounded p-2">{e.error}</div>
                       )}

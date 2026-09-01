@@ -110,13 +110,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   )
 }
 
-// ─── Bulk (BCC) send ──────────────────────────────────────────────────────────
-
-// Resend caps a single message at 50 recipients counted across to/cc/bcc.
-// Every bulk message already spends one of those on the visible To address, so
-// only 49 are left for members — a larger group is split across several sends.
-const MAX_RECIPIENTS_PER_MESSAGE = 50
-const BCC_BATCH_SIZE = MAX_RECIPIENTS_PER_MESSAGE - 1 // reserve the To slot
+// ─── Bulk send ────────────────────────────────────────────────────────────────
 
 export interface BulkRecipient {
   id?: string | null
@@ -130,7 +124,7 @@ export interface SendBulkEmailOptions {
   subject: string
   html: string
   competitionId?: string | null
-  /** Visible To address; defaults to the configured bulk-to setting. */
+  /** Club address that also receives its own copy; defaults to the bulk-to setting. */
   toAddress?: string | null
   /** Overrides the configured reply-to for this send. */
   replyTo?: string | null
@@ -139,98 +133,105 @@ export interface SendBulkEmailOptions {
 export interface SendBulkEmailResult {
   sent: number
   skipped: number
-  batches: number
   /** Distinct provider errors, so a failed send explains itself to the caller. */
   errors: string[]
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
-}
-
 /**
- * Sends one identical email per batch of up to 50 recipients, with every member
- * BCC'd so nobody sees anyone else's address. Only safe for bodies with no
- * per-member personalisation — personalised mail must still go via sendEmail().
+ * Sends the same body to a group as one separate message per member, each
+ * addressed only to that member. Slower than a single BCC'd message, but Gmail
+ * rate-limits the club's sending domain when it sees one identical message
+ * fanned out to the whole membership at once (421-4.7.28), and this way no
+ * member's address is exposed to any other member.
  *
- * Writes a summary row to email_log per batch, plus a child row per recipient
- * (linked by batch_id) so the per-member audit trail and search still work.
+ * Only safe for bodies with no per-member personalisation — personalised mail
+ * must still go via sendEmail().
+ *
+ * Writes one summary row to email_log for the group, plus a child row per
+ * recipient (linked by batch_id) so the per-member audit trail and search work.
  */
 export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBulkEmailResult> {
   const html = styleLinks(opts.html + await getFooterHtml())
   const toAddress = opts.toAddress?.trim() || await getBulkToAddress()
   const replyTo = opts.replyTo?.trim() || await getReplyToAddress()
   const pool = getPool()
-  let sent = 0, skipped = 0
-  const errors = new Set<string>()
-  const batches = chunk(opts.recipients, BCC_BATCH_SIZE)
 
-  for (const batch of batches) {
-    let error: string | null = null
+  if (!resend) {
+    // Dev mode: print the body once, then a line per recipient below.
+    console.log(`\n[BULK EMAIL – no RESEND_API_KEY set]`)
+    console.log(`Reply-To: ${replyTo}`)
+    console.log(`Subject:  ${opts.subject}`)
+    console.log(`Body:\n${html}\n`)
+  }
 
-    if (resend) {
-      try {
-        const result = await resend.emails.send({
-          from: FROM,
-          // Resend requires a `to`; a club address takes it so that the entire
-          // membership stays hidden in bcc.
-          to: toAddress,
-          bcc: batch.map(r => (r.name ? `${r.name} <${r.email}>` : r.email)),
-          replyTo,
-          subject: opts.subject,
-          html,
-        })
-        if (result.error) error = result.error.message
-      } catch (err) {
-        error = (err as Error).message
-      }
-    } else {
-      // Dev mode: print to console instead of sending
-      console.log(`\n[BULK EMAIL – no RESEND_API_KEY set]`)
-      console.log(`To:       ${toAddress}`)
-      console.log(`Reply-To: ${replyTo}`)
-      console.log(`Bcc:      ${batch.length} recipient(s): ${batch.map(r => r.email).join(', ')}`)
-      console.log(`Subject:  ${opts.subject}`)
-      console.log(`Body:\n${html}\n`)
+  /** Delivers one message, returning the provider error (or null on success). */
+  async function deliver(to: string, name?: string | null): Promise<string | null> {
+    const addressee = name ? `${name} <${to}>` : to
+    if (!resend) {
+      console.log(`To:       ${addressee}`)
+      return null
     }
-
-    if (error) {
-      skipped += batch.length
-      errors.add(error)
-    } else {
-      sent += batch.length
-    }
-
-    // Summary row for the message actually sent…
-    const summary = await pool.query(
-      `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, error, recipient_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [
-        opts.type,
-        toAddress,
-        `${batch.length} recipient${batch.length === 1 ? '' : 's'} (BCC)`,
-        opts.competitionId ?? null,
-        opts.subject,
-        opts.html,
-        error,
-        batch.length,
-      ],
-    )
-    const batchId: string = summary.rows[0].id
-
-    // …and a child row per member, preserving the per-member trail.
-    for (const r of batch) {
-      await pool.query(
-        `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, competition_id, subject, body, error, batch_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [opts.type, r.email, r.name ?? null, r.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
-      )
+    try {
+      const result = await resend.emails.send({
+        from: FROM,
+        to: addressee,
+        replyTo,
+        subject: opts.subject,
+        html,
+      })
+      return result.error ? result.error.message : null
+    } catch (err) {
+      return (err as Error).message
     }
   }
 
-  return { sent, skipped, batches: batches.length, errors: [...errors] }
+  // Sequential rather than parallel: awaiting each send in turn keeps the club
+  // domain trickling mail out instead of bursting it at the receiving servers.
+  const results: Array<{ recipient: BulkRecipient; error: string | null }> = []
+  for (const r of opts.recipients) {
+    results.push({ recipient: r, error: await deliver(r.email, r.name) })
+  }
+
+  // The club mailbox still keeps its own copy of every group send, as it did
+  // when it was the visible To address on the BCC'd message.
+  const clubError = await deliver(toAddress)
+
+  const errors = new Set<string>()
+  let sent = 0, skipped = 0
+  for (const { error } of results) {
+    if (error) { skipped++; errors.add(error) } else sent++
+  }
+  if (clubError) errors.add(clubError)
+
+  const total = opts.recipients.length
+
+  // Summary row for the group, so the log shows one entry per send…
+  const summary = await pool.query(
+    `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, error, recipient_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [
+      opts.type,
+      toAddress,
+      `${total} recipient${total === 1 ? '' : 's'}`,
+      opts.competitionId ?? null,
+      opts.subject,
+      opts.html,
+      skipped > 0 ? `${skipped} of ${total} failed: ${[...errors].join('; ')}` : null,
+      total,
+    ],
+  )
+  const batchId: string = summary.rows[0].id
+
+  // …and a child row per member, each carrying that member's own result.
+  for (const { recipient, error } of results) {
+    await pool.query(
+      `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, competition_id, subject, body, error, batch_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [opts.type, recipient.email, recipient.name ?? null, recipient.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
+    )
+  }
+
+  return { sent, skipped, errors: [...errors] }
 }
 
 // ─── Template engine ──────────────────────────────────────────────────────────

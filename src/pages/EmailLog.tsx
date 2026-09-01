@@ -366,7 +366,7 @@ export default function EmailLog() {
   const emails = search
     ? allEmails.filter(e => {
         const q = search.toLowerCase()
-        // A bulk send also matches on any of the members it was BCC'd to.
+        // A group send also matches on any of the members it went out to.
         const matchesRecipient = (email: string, name: string | null) =>
           email.toLowerCase().includes(q) || (name ?? '').toLowerCase().includes(q)
         return (
@@ -427,7 +427,7 @@ export default function EmailLog() {
           member_id: recipients === 'member' ? selectedMember?.id : undefined,
           subject: subject.trim(),
           body: body.trim(),
-          // To only applies to a BCC'd group send; a single member is addressed directly.
+          // The club copy address only applies to a group send; a single member is addressed directly.
           to_address: recipients === 'member' ? undefined : toAddress.trim() || undefined,
           reply_to: replyTo.trim() || undefined,
         }),
@@ -525,7 +525,7 @@ export default function EmailLog() {
                       </div>
                       {e.recipient_count != null && (
                         <div className="text-xs text-gray-500">
-                          <span className="font-medium">Bcc:</span>{' '}
+                          <span className="font-medium">Recipients:</span>{' '}
                           {(membersByBatch.get(e.id) ?? []).length
                             ? (membersByBatch.get(e.id) ?? [])
                                 .map(m => m.recipient_name ?? m.recipient_email)
@@ -658,10 +658,10 @@ export default function EmailLog() {
                 )}
               </div>
 
-              {/* To — group sends only; a single member is addressed directly */}
+              {/* Club copy — group sends only; a single member is addressed directly */}
               {recipients !== 'member' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Club copy</label>
                   <input
                     type="email"
                     value={toAddress}
@@ -670,7 +670,7 @@ export default function EmailLog() {
                     placeholder={defaultToAddress || 'compsecwaicamc@gmail.com'}
                   />
                   <p className="mt-1 text-xs text-gray-400">
-                    Members are BCC'd, so this is the only address they'll see.
+                    Each member gets their own separate email; this address receives a copy for the club's records.
                   </p>
                 </div>
               )}

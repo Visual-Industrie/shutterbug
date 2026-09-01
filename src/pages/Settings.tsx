@@ -293,14 +293,14 @@ function EmailAddressSettings({ rows }: { rows: SettingRow[] }) {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Bulk email "To" address</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Group email club copy address</label>
           <input
             type="email"
             value={bulkTo}
             onChange={e => { setBulkTo(e.target.value); setSaved(false) }}
             className={fieldCls}
           />
-          <p className="mt-1 text-xs text-gray-400">Members are BCC'd on group sends, so this is the only recipient they see.</p>
+          <p className="mt-1 text-xs text-gray-400">Group sends go out as a separate email per member; this address also receives a copy for the club's records.</p>
         </div>
 
         <div>

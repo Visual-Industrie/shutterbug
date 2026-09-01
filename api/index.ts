@@ -791,7 +791,7 @@ app.post('/api/email/send-bulk', async (req, res) => {
     const html = `${htmlBody}\n<p>—<br>Wairarapa Camera Club</p>`
 
     // A single member gets an ordinary addressed email; a group goes out as one
-    // BCC'd send per batch so members neither see each other nor get N copies.
+    // separately addressed message per member, so nobody sees anyone else.
     if (recipients === 'member') {
       const m = memberRows[0]
       try {

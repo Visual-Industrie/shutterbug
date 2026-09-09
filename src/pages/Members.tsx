@@ -17,7 +17,8 @@ interface Member {
   subs_due_date: string | null
   joined_date: string | null
   experience_level: string | null
-  annual_sub_amount: string | null
+  /** numeric in Postgres, so this arrives as a number — not a string. */
+  annual_sub_amount: number | null
 }
 
 interface Payment {
@@ -61,14 +62,15 @@ const isPrivate = (email: string) => email.includes('@privacy.wcc.local')
 // ── CSV export ────────────────────────────────────────────────────────────────
 
 // Quote every cell and double any embedded quotes, so commas and line breaks in
-// addresses survive the round trip into a spreadsheet.
-function csvCell(value: string | null | undefined): string {
-  return `"${(value ?? '').replace(/"/g, '""')}"`
+// addresses survive the round trip into a spreadsheet. Coerces first: numeric
+// columns arrive from Postgres as numbers, not strings.
+function csvCell(value: string | number | boolean | null | undefined): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
 // The export carries the full record, including the subs and joined dates that
 // the table itself no longer shows.
-const CSV_COLUMNS: Array<{ header: string; value: (m: Member) => string | null }> = [
+const CSV_COLUMNS: Array<{ header: string; value: (m: Member) => string | number | null }> = [
   { header: 'Member #',   value: m => m.membership_number },
   { header: 'First name', value: m => m.first_name },
   { header: 'Last name',  value: m => m.last_name },
@@ -173,7 +175,7 @@ export default function Members() {
     setPaymentsLoading(true)
     setPaymentError(null)
     setPaymentYear(String(new Date().getFullYear()))
-    setPaymentAmount(m.annual_sub_amount ?? '')
+    setPaymentAmount(m.annual_sub_amount != null ? String(m.annual_sub_amount) : '')
     setPaymentDate(new Date().toISOString().split('T')[0])
     setPaymentNotes('')
     setShowPayments(true)
@@ -236,7 +238,7 @@ export default function Members() {
       subs_paid: m.subs_paid,
       subs_due_date: m.subs_due_date ?? '',
       joined_date: m.joined_date ?? '',
-      annual_sub_amount: m.annual_sub_amount ?? '',
+      annual_sub_amount: m.annual_sub_amount != null ? String(m.annual_sub_amount) : '',
     })
     setFormError(null)
     setShowModal(true)

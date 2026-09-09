@@ -56,6 +56,34 @@ const STATUS_OPTS = ['all', 'active', 'inactive', 'suspended']
 const TYPE_OPTS = ['all', 'full', 'life', 'complimentary']
 const inputCls = 'w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
 
+const isPrivate = (email: string) => email.includes('@privacy.wcc.local')
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+
+// Quote every cell and double any embedded quotes, so commas and line breaks in
+// addresses survive the round trip into a spreadsheet.
+function csvCell(value: string | null | undefined): string {
+  return `"${(value ?? '').replace(/"/g, '""')}"`
+}
+
+// The export carries the full record, including the subs and joined dates that
+// the table itself no longer shows.
+const CSV_COLUMNS: Array<{ header: string; value: (m: Member) => string | null }> = [
+  { header: 'Member #',   value: m => m.membership_number },
+  { header: 'First name', value: m => m.first_name },
+  { header: 'Last name',  value: m => m.last_name },
+  { header: 'Email',      value: m => (isPrivate(m.email) ? '' : m.email) },
+  { header: 'Phone',      value: m => m.phone },
+  { header: 'Address',    value: m => m.address },
+  { header: 'Type',       value: m => m.membership_type },
+  { header: 'Status',     value: m => m.status },
+  { header: 'Experience', value: m => m.experience_level },
+  { header: 'Subs paid',  value: m => (m.subs_paid ? 'Yes' : 'No') },
+  { header: 'Subs due',   value: m => m.subs_due_date },
+  { header: 'Joined',     value: m => m.joined_date },
+  { header: 'Annual sub', value: m => m.annual_sub_amount },
+]
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -242,7 +270,22 @@ export default function Members() {
     return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium capitalize ${c[t] ?? 'bg-gray-100 text-gray-500'}`}>{t}</span>
   }
 
-  const isPrivate = (email: string) => email.includes('@privacy.wcc.local')
+  // Exports exactly the rows on screen, so the filters above double as the
+  // export's selection — the default status filter makes that active members.
+  function exportCsv() {
+    const lines = [
+      CSV_COLUMNS.map(c => csvCell(c.header)).join(','),
+      ...members.map(m => CSV_COLUMNS.map(c => csvCell(c.value(m))).join(',')),
+    ]
+    // Leading BOM so Excel opens it as UTF-8 and macrons in names survive.
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `members-${status}-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="p-8 max-w-7xl">
@@ -251,12 +294,22 @@ export default function Members() {
           <h1 className="text-2xl font-bold text-gray-900">Members</h1>
           <p className="text-sm text-gray-500 mt-0.5">{members.length} shown</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
-        >
-          + Add member
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={members.length === 0}
+            title="Download the members listed below as a CSV file"
+            className="px-4 py-2 border border-gray-300 text-gray-600 text-sm font-medium rounded-lg hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-300 disabled:hover:text-gray-600 disabled:hover:bg-transparent transition-colors"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={openAdd}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            + Add member
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-5">
@@ -286,16 +339,15 @@ export default function Members() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">#</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Subs</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Joined</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {members.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No members found</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No members found</td></tr>
               )}
               {members.map(m => {
                 const msg = historyMsg[m.id]
@@ -308,16 +360,9 @@ export default function Members() {
                         ? <span className="text-gray-300 text-xs italic">deleted</span>
                         : m.email}
                     </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{m.phone || '—'}</td>
                     <td className="px-4 py-3">{typeBadge(m.membership_type)}</td>
                     <td className="px-4 py-3">{statusBadge(m.status)}</td>
-                    <td className="px-4 py-3">
-                      {m.subs_paid
-                        ? <span className="text-green-600 text-xs font-medium">✓ Paid</span>
-                        : <span className="text-orange-500 text-xs font-medium">Unpaid</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {m.joined_date ? new Date(m.joined_date).getFullYear() : '—'}
-                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button

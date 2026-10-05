@@ -6,17 +6,8 @@ import Link from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { EMAIL_TYPE_LABELS as TYPE_LABELS } from '@/components/admin/EmailLogList'
 
-const TYPE_LABELS: Record<string, string> = {
-  submission_invite: 'Submission invite',
-  submission_reminder: 'Reminder',
-  submission_confirmation: 'Confirmation',
-  judging_invite: 'Judge invite',
-  results_notification: 'Results',
-  member_history_link: 'History link',
-  subs_reminder: 'Subs reminder',
-  one_off: 'One-off',
-}
 
 type Recipients = 'all_active' | 'subs_unpaid' | 'member'
 

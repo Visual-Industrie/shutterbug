@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
+import EmailLogList from '@/components/admin/EmailLogList'
 
 interface Member {
   id: string
@@ -106,6 +107,9 @@ export default function Members() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<MemberForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
+
+  // Email log modal
+  const [emailLogFor, setEmailLogFor] = useState<Member | null>(null)
 
   // Payment history modal
   const [showPayments, setShowPayments] = useState(false)
@@ -379,6 +383,12 @@ export default function Members() {
                         >
                           Payments
                         </button>
+                        <button
+                          onClick={() => setEmailLogFor(m)}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+                        >
+                          Email log
+                        </button>
                         {!isPrivate(m.email) && (
                           <button
                             onClick={() => sendHistoryLink(m.id)}
@@ -508,6 +518,32 @@ export default function Members() {
 
             <div className="px-6 py-4 border-t border-gray-200">
               <button type="button" onClick={() => setShowPayments(false)} className="w-full py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Log Modal */}
+      {emailLogFor && (
+        <div className="fixed inset-0 z-50 flex items-start justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setEmailLogFor(null)} />
+          <div className="relative bg-white h-full w-full max-w-lg shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Email log</h2>
+                <p className="text-sm text-gray-500">{emailLogFor.first_name} {emailLogFor.last_name}</p>
+              </div>
+              <button onClick={() => setEmailLogFor(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <EmailLogList memberId={emailLogFor.id} />
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200">
+              <button type="button" onClick={() => setEmailLogFor(null)} className="w-full py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Close
               </button>
             </div>

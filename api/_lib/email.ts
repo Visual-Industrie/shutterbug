@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Resend } from 'resend'
 import { getPool } from './db.js'
 
@@ -19,7 +20,31 @@ function styleLinks(html: string): string {
   )
 }
 
-async function getFooterHtml(): Promise<string> {
+// Footer, reply-to and template lookups are the same for every message in a
+// bulk run, so withSendCache() memoises them for the duration of that run only
+// (never across requests — an edited template must apply to the very next send).
+const sendCache = new AsyncLocalStorage<Map<string, Promise<unknown>>>()
+
+export function withSendCache<T>(fn: () => Promise<T>): Promise<T> {
+  return sendCache.run(new Map(), fn)
+}
+
+function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const store = sendCache.getStore()
+  if (!store) return load()
+  let hit = store.get(key) as Promise<T> | undefined
+  if (!hit) {
+    hit = load()
+    store.set(key, hit)
+  }
+  return hit
+}
+
+function getFooterHtml(): Promise<string> {
+  return cached('footer', loadFooterHtml)
+}
+
+async function loadFooterHtml(): Promise<string> {
   try {
     const res = await getPool().query(`SELECT value, default_value FROM settings WHERE key = 'email_footer'`)
     const row = res.rows[0]
@@ -34,7 +59,11 @@ async function getFooterHtml(): Promise<string> {
 // address is a safer landing spot for replies than the unattended noreply box.
 const DEFAULT_CLUB_EMAIL = 'compsecwaicamc@gmail.com'
 
-async function getAddressSetting(key: string): Promise<string> {
+function getAddressSetting(key: string): Promise<string> {
+  return cached(`setting:${key}`, () => loadAddressSetting(key))
+}
+
+async function loadAddressSetting(key: string): Promise<string> {
   try {
     const res = await getPool().query(`SELECT value, default_value FROM settings WHERE key = $1`, [key])
     const row = res.rows[0]
@@ -65,23 +94,32 @@ export interface SendEmailOptions {
 /**
  * Sends an email via Resend (or logs to console in dev when no API key is set),
  * then writes the result to email_log regardless of success/failure.
+ *
+ * Returns the provider's rejection message (null on success) so bulk loops can
+ * count it as a failure. A thrown send error is logged too, then rethrown.
  */
-export async function sendEmail(opts: SendEmailOptions): Promise<void> {
+export async function sendEmail(opts: SendEmailOptions): Promise<string | null> {
   let error: string | null = null
+  let thrown: unknown = null
 
   const html = styleLinks(opts.html + await getFooterHtml())
   const replyTo = opts.replyTo?.trim() || await getReplyToAddress()
 
   if (resend) {
-    const result = await resend.emails.send({
-      from: FROM,
-      to: opts.toName ? `${opts.toName} <${opts.to}>` : opts.to,
-      replyTo,
-      subject: opts.subject,
-      html,
-    })
-    if (result.error) {
-      error = result.error.message
+    try {
+      const result = await resend.emails.send({
+        from: FROM,
+        to: opts.toName ? `${opts.toName} <${opts.to}>` : opts.to,
+        replyTo,
+        subject: opts.subject,
+        html,
+      })
+      if (result.error) {
+        error = result.error.message
+      }
+    } catch (err) {
+      thrown = err
+      error = err instanceof Error ? err.message : String(err)
     }
   } else {
     // Dev mode: print to console instead of sending
@@ -108,6 +146,9 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       error,
     ],
   )
+
+  if (thrown) throw thrown
+  return error
 }
 
 // ─── Bulk send ────────────────────────────────────────────────────────────────
@@ -185,30 +226,15 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
     }
   }
 
-  // Sequential rather than parallel: awaiting each send in turn keeps the club
-  // domain trickling mail out instead of bursting it at the receiving servers.
-  const results: Array<{ recipient: BulkRecipient; error: string | null }> = []
-  for (const r of opts.recipients) {
-    results.push({ recipient: r, error: await deliver(r.email, r.name) })
-  }
-
-  // The club mailbox still keeps its own copy of every group send, as it did
-  // when it was the visible To address on the BCC'd message.
-  const clubError = await deliver(toAddress)
-
-  const errors = new Set<string>()
-  let sent = 0, skipped = 0
-  for (const { error } of results) {
-    if (error) { skipped++; errors.add(error) } else sent++
-  }
-  if (clubError) errors.add(clubError)
-
   const total = opts.recipients.length
 
-  // Summary row for the group, so the log shows one entry per send…
+  // Summary row for the group, so the log shows one entry per send. Written up
+  // front (and its error filled in at the end) so that each member's row below
+  // can be logged the moment their message goes — if the run is cut short, the
+  // log still shows exactly who was reached.
   const summary = await pool.query(
-    `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, error, recipient_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, recipient_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [
       opts.type,
       toAddress,
@@ -216,19 +242,36 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
       opts.competitionId ?? null,
       opts.subject,
       opts.html,
-      skipped > 0 ? `${skipped} of ${total} failed: ${[...errors].join('; ')}` : null,
       total,
     ],
   )
   const batchId: string = summary.rows[0].id
 
-  // …and a child row per member, each carrying that member's own result.
-  for (const { recipient, error } of results) {
+  const errors = new Set<string>()
+  let sent = 0, skipped = 0
+
+  // Sequential rather than parallel: awaiting each send in turn keeps the club
+  // domain trickling mail out instead of bursting it at the receiving servers.
+  for (const r of opts.recipients) {
+    const error = await deliver(r.email, r.name)
+    if (error) { skipped++; errors.add(error) } else sent++
     await pool.query(
       `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, competition_id, subject, body, error, batch_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [opts.type, recipient.email, recipient.name ?? null, recipient.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
+      [opts.type, r.email, r.name ?? null, r.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
     )
+  }
+
+  // The club mailbox still keeps its own copy of every group send, as it did
+  // when it was the visible To address on the BCC'd message.
+  const clubError = await deliver(toAddress)
+  if (clubError) errors.add(clubError)
+
+  if (skipped > 0 || clubError) {
+    const summaryError = skipped > 0
+      ? `${skipped} of ${total} failed: ${[...errors].join('; ')}`
+      : `Club copy failed: ${clubError}`
+    await pool.query(`UPDATE email_log SET error = $1 WHERE id = $2`, [summaryError, batchId])
   }
 
   return { sent, skipped, errors: [...errors] }
@@ -254,7 +297,13 @@ export function applyTemplate(template: string, vars: Record<string, string>): s
   })
 }
 
-export async function getEmailTemplate(
+export function getEmailTemplate(
+  key: string,
+): Promise<{ subject_template: string; body_html: string } | null> {
+  return cached(`template:${key}`, () => loadEmailTemplate(key))
+}
+
+async function loadEmailTemplate(
   key: string,
 ): Promise<{ subject_template: string; body_html: string } | null> {
   try {

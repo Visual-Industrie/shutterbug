@@ -7,6 +7,7 @@ import TiptapLink from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { compressImage } from '@/lib/image'
+import EmailLogList from '@/components/admin/EmailLogList'
 
 interface CompDetail {
   id: string
@@ -246,9 +247,13 @@ export default function CompetitionDetail() {
     setWorking(true)
     setActionMsg(null)
     try {
-      const data = await apiFetch<{ sent?: number; skipped?: number }>(path, { method: 'POST' })
+      const data = await apiFetch<{ sent?: number; skipped?: number; alreadySent?: number; errors?: string[] }>(path, { method: 'POST' })
       if (data.sent !== undefined) {
-        setActionMsg({ text: `${label}: ${data.sent} sent, ${data.skipped} skipped.`, ok: true })
+        const parts = [`${data.sent} sent`]
+        if (data.skipped) parts.push(`${data.skipped} failed`)
+        if (data.alreadySent) parts.push(`${data.alreadySent} already sent in the last hour`)
+        const failures = data.errors?.length ? ` ${data.errors.join('; ')}` : ''
+        setActionMsg({ text: `${label}: ${parts.join(', ')}.${failures}`, ok: !data.skipped })
       } else {
         setActionMsg({ text: `${label}: done.`, ok: true })
       }
@@ -257,6 +262,7 @@ export default function CompetitionDetail() {
       setActionMsg({ text: `${label} failed: ${msg}`, ok: false })
     } finally {
       setWorking(false)
+      queryClient.invalidateQueries({ queryKey: ['email-log'] })
     }
   }
 
@@ -614,6 +620,12 @@ export default function CompetitionDetail() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Email log */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Email log</h2>
+            <EmailLogList competitionId={comp.id} />
           </div>
 
           {/* Points config */}

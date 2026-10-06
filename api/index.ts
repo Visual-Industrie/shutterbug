@@ -19,7 +19,7 @@ import {
   sendDeadlineReminders,
   sendDeadlineReminderToMember,
 } from './_lib/competition-actions.js'
-import { sendEmail, sendBulkEmail, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
+import { sendEmail, sendBulkEmail, sendPersonalisedRun, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
@@ -838,19 +838,18 @@ app.post('/api/email/subs-reminder', async (req, res) => {
        ORDER BY last_name, first_name`,
     )
 
-    let sent = 0, skipped = 0
-    for (const m of membersRes.rows) {
-      try {
-        const { subject, html } = await subsReminderEmail({
-          memberName: `${m.first_name} ${m.last_name}`,
-          amountDue: m.annual_sub_amount,
-          reminderNumber,
-        })
-        await sendEmail({ type: 'subs_reminder', to: m.email, toName: `${m.first_name} ${m.last_name}`, subject, html, memberId: m.id })
-        sent++
-      } catch { skipped++ }
-    }
-    res.json({ sent, skipped })
+    const amounts = new Map<string, string | null>(membersRes.rows.map((m: { id: string; annual_sub_amount: string | null }) => [m.id, m.annual_sub_amount]))
+    const { sent, skipped, errors } = await sendPersonalisedRun({
+      type: 'subs_reminder',
+      subject: reminderNumber === 2 ? 'Subs reminder (second)' : 'Subs reminder',
+      members: membersRes.rows,
+      build: m => subsReminderEmail({
+        memberName: `${m.first_name} ${m.last_name}`,
+        amountDue: amounts.get(m.id) ?? null,
+        reminderNumber,
+      }),
+    })
+    res.json({ sent, skipped, errors })
   } catch (err) {
     console.error('POST /api/email/subs-reminder', err)
     res.status(500).json({ error: (err as Error).message })

@@ -2,7 +2,8 @@ import { getPool } from './db.js'
 import { upsertSubmissionToken, upsertJudgingToken, upsertHistoryToken } from './tokens.js'
 import {
   sendEmail,
-  withSendCache,
+  sendPersonalisedRun,
+  type RunMember,
   submissionInviteEmail,
   submissionReminderEmail,
   judgingInviteEmail,
@@ -10,8 +11,6 @@ import {
   resultsNotificationEmail,
   deadlineReminderEmail,
 } from './email.js'
-
-interface MemberRow { id: string; first_name: string; last_name: string; email: string }
 
 interface BulkSendResult {
   sent: number
@@ -27,47 +26,43 @@ interface BulkSendResult {
 // to everyone.
 const RESUME_WINDOW = '1 hour'
 
+const RUN_LABELS: Record<string, string> = {
+  submission_invite: 'Submission invite',
+  submission_reminder: 'Reminder',
+  deadline_reminder: 'Deadline reminder',
+  results_notification: 'Results',
+}
+
+type BuiltEmail = { subject: string; html: string; tokenId?: string | null }
+
 /**
- * Sends one personalised email per member, one at a time. Each send returns the
- * provider's rejection (or null), and a thrown error also counts as a failure,
- * so one bad address never stops the rest of the run.
+ * Sends a competition email to each member as one logged bulk run (see
+ * sendPersonalisedRun), first passing over anyone already sent it within the
+ * resume window.
  */
 async function sendToEach(
-  competitionId: string,
+  comp: { id: string; name: string },
   type: string,
-  members: MemberRow[],
-  sendOne: (m: MemberRow) => Promise<string | null>,
+  members: RunMember[],
+  build: (m: RunMember) => Promise<BuiltEmail>,
 ): Promise<BulkSendResult> {
   const recentRes = await getPool().query(
     `SELECT DISTINCT member_id FROM email_log
      WHERE competition_id = $1 AND type = $2 AND error IS NULL AND member_id IS NOT NULL
        AND sent_at > NOW() - $3::interval`,
-    [competitionId, type, RESUME_WINDOW],
+    [comp.id, type, RESUME_WINDOW],
   )
   const recent = new Set<string>(recentRes.rows.map((r: { member_id: string }) => r.member_id))
+  const toSend = members.filter(m => !recent.has(m.id))
 
-  let sent = 0, skipped = 0, alreadySent = 0
-  const errors: string[] = []
-
-  await withSendCache(async () => {
-    for (const m of members) {
-      if (recent.has(m.id)) { alreadySent++; continue }
-      try {
-        const error = await sendOne(m)
-        if (error) {
-          errors.push(`${m.email}: ${error}`)
-          skipped++
-        } else {
-          sent++
-        }
-      } catch (err) {
-        errors.push(`${m.email}: ${err instanceof Error ? err.message : String(err)}`)
-        skipped++
-      }
-    }
+  const result = await sendPersonalisedRun({
+    type,
+    subject: `${RUN_LABELS[type] ?? type} — ${comp.name}`,
+    competitionId: comp.id,
+    members: toSend,
+    build,
   })
-
-  return { sent, skipped, alreadySent, errors }
+  return { ...result, alreadySent: members.length - toSend.length }
 }
 
 export async function sendSubmissionInvites(competitionId: string): Promise<BulkSendResult> {
@@ -86,7 +81,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<Bulk
      ORDER BY last_name, first_name`,
   )
 
-  return sendToEach(competitionId, 'submission_invite', membersRes.rows, async m => {
+  return sendToEach(comp, 'submission_invite', membersRes.rows, async m => {
     const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
     const { subject, html } = await submissionInviteEmail({
       memberName: `${m.first_name} ${m.last_name}`,
@@ -95,16 +90,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<Bulk
       token: tok.token,
       description: comp.description,
     })
-    return sendEmail({
-      type: 'submission_invite',
-      to: m.email,
-      toName: `${m.first_name} ${m.last_name}`,
-      subject,
-      html,
-      memberId: m.id,
-      competitionId,
-      tokenId: tok.id,
-    })
+    return { subject, html, tokenId: tok.id }
   })
 }
 
@@ -123,7 +109,7 @@ export async function sendSubmissionReminders(competitionId: string): Promise<Bu
      ORDER BY last_name, first_name`,
   )
 
-  return sendToEach(competitionId, 'submission_reminder', membersRes.rows, async m => {
+  return sendToEach(comp, 'submission_reminder', membersRes.rows, async m => {
     const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
     const entryRes = await getPool().query(
       `SELECT COUNT(*) AS cnt FROM entries WHERE competition_id = $1 AND member_id = $2`,
@@ -138,23 +124,14 @@ export async function sendSubmissionReminders(competitionId: string): Promise<Bu
       token: tok.token,
       entryCount,
     })
-    return sendEmail({
-      type: 'submission_reminder',
-      to: m.email,
-      toName: `${m.first_name} ${m.last_name}`,
-      subject,
-      html,
-      memberId: m.id,
-      competitionId,
-      tokenId: tok.id,
-    })
+    return { subject, html, tokenId: tok.id }
   })
 }
 
-async function sendDeadlineReminderToMemberRow(
+async function buildDeadlineReminder(
   comp: { id: string; name: string; closes_at: string | null; max_projim_entries: number; max_printim_entries: number },
-  m: MemberRow,
-): Promise<string | null> {
+  m: RunMember,
+): Promise<BuiltEmail> {
   const tok = await upsertSubmissionToken(m.id, comp.id, comp.closes_at ? new Date(comp.closes_at) : null)
 
   const entriesRes = await getPool().query(
@@ -181,16 +158,7 @@ async function sendDeadlineReminderToMemberRow(
     maxPrintim: comp.max_printim_entries,
     entries,
   })
-  return sendEmail({
-    type: 'deadline_reminder',
-    to: m.email,
-    toName: `${m.first_name} ${m.last_name}`,
-    subject,
-    html,
-    memberId: m.id,
-    competitionId: comp.id,
-    tokenId: tok.id,
-  })
+  return { subject, html, tokenId: tok.id }
 }
 
 export async function sendDeadlineReminderToMember(competitionId: string, memberId: string): Promise<{ memberName: string; status: string }> {
@@ -209,7 +177,17 @@ export async function sendDeadlineReminderToMember(competitionId: string, member
   const m = memberRes.rows[0]
   if (!m) throw new Error('Member not found')
 
-  await sendDeadlineReminderToMemberRow(comp, m)
+  const { subject, html, tokenId } = await buildDeadlineReminder(comp, m)
+  await sendEmail({
+    type: 'deadline_reminder',
+    to: m.email,
+    toName: `${m.first_name} ${m.last_name}`,
+    subject,
+    html,
+    memberId: m.id,
+    competitionId: comp.id,
+    tokenId,
+  })
   return { memberName: `${m.first_name} ${m.last_name}`, status: comp.status }
 }
 
@@ -228,7 +206,7 @@ export async function sendDeadlineReminders(competitionId: string): Promise<Bulk
      ORDER BY last_name, first_name`,
   )
 
-  return sendToEach(competitionId, 'deadline_reminder', membersRes.rows, m => sendDeadlineReminderToMemberRow(comp, m))
+  return sendToEach(comp, 'deadline_reminder', membersRes.rows, m => buildDeadlineReminder(comp, m))
 }
 
 export async function sendJudgingInvite(competitionId: string): Promise<{ judgeName: string }> {
@@ -375,7 +353,7 @@ export async function sendResults(competitionId: string): Promise<BulkSendResult
     [competitionId],
   )
 
-  return sendToEach(competitionId, 'results_notification', membersRes.rows, async m => {
+  return sendToEach(comp, 'results_notification', membersRes.rows, async m => {
     const entriesRes = await pool.query(
       `SELECT e.type, e.title, e.award, e.points_awarded, e.judge_comment, j.name AS judge_name
        FROM entries e
@@ -394,15 +372,6 @@ export async function sendResults(competitionId: string): Promise<BulkSendResult
       token: historyTok.token,
       judgeName: compJudgeName,
     })
-    return sendEmail({
-      type: 'results_notification',
-      to: m.email,
-      toName: `${m.first_name} ${m.last_name}`,
-      subject,
-      html,
-      memberId: m.id,
-      competitionId,
-      tokenId: historyTok.id,
-    })
+    return { subject, html, tokenId: historyTok.id }
   })
 }

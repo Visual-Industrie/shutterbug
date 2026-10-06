@@ -20,7 +20,7 @@ export const EMAIL_TYPE_LABELS: Record<string, string> = {
 // already a member) when the send went out but missing from it was skipped.
 const ALL_MEMBER_TYPES = new Set(['submission_invite', 'submission_reminder', 'deadline_reminder'])
 
-interface EmailRow {
+export interface EmailRow {
   id: string
   type: string
   member_id: string | null
@@ -32,7 +32,7 @@ interface EmailRow {
   error: string | null
 }
 
-interface MemberLite {
+export interface MemberLite {
   id: string
   first_name: string
   last_name: string
@@ -61,8 +61,25 @@ export default function EmailLogList({ memberId, competitionId }: { memberId?: s
   return null
 }
 
-function EmailRowItem({ e, title, subtitle }: { e: EmailRow; title: string; subtitle: string }) {
+// Rows a bulk run created up front and never got to carry this error prefix.
+export const isNotSent = (error: string | null) => !!error && error.startsWith('Not sent')
+
+export function EmailRowItem({ e, title, subtitle }: {
+  e: Pick<EmailRow, 'id' | 'type' | 'recipient_email' | 'sent_at' | 'error'> & { body?: string | null }
+  title: string
+  subtitle: string
+}) {
   const [open, setOpen] = useState(false)
+  // Bulk-run listings leave bodies out to stay light; fetch one when opened.
+  const { data: lazyBody } = useQuery({
+    queryKey: ['email-body', e.id],
+    enabled: open && e.body === undefined,
+    queryFn: async () => {
+      const { data } = await supabase.from('email_log').select('body').eq('id', e.id).single()
+      return (data?.body as string | null) ?? null
+    },
+  })
+  const body = e.body === undefined ? lazyBody : e.body
   return (
     <div className="rounded-lg border border-gray-200 overflow-hidden">
       <button
@@ -73,7 +90,9 @@ function EmailRowItem({ e, title, subtitle }: { e: EmailRow; title: string; subt
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-900 truncate">{title}</span>
-            {e.error && <span className="text-xs text-red-500 shrink-0">⚠ Failed</span>}
+            {e.error && (
+              <span className="text-xs text-red-500 shrink-0">{isNotSent(e.error) ? '⚠ Not sent' : '⚠ Failed'}</span>
+            )}
           </div>
           <div className="text-xs text-gray-500 mt-0.5 truncate">{subtitle}</div>
         </div>
@@ -92,10 +111,10 @@ function EmailRowItem({ e, title, subtitle }: { e: EmailRow; title: string; subt
           {e.error && (
             <div className="text-xs text-red-600 bg-red-50 rounded p-2">{e.error}</div>
           )}
-          {e.body && (
+          {body && (
             <div
               className="text-gray-700 text-sm prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: e.body }}
+              dangerouslySetInnerHTML={{ __html: body }}
             />
           )}
         </div>
@@ -179,13 +198,14 @@ function CompetitionEmailLog({ competitionId }: { competitionId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['email-log', 'competition', competitionId],
     queryFn: async () => {
-      // Skip a group send's per-member children; its summary row stands in for them.
+      // One row per member: a bulk run's summary row is left out (its
+      // per-member rows carry who was and wasn't reached).
       const [log, members, entrants] = await Promise.all([
         supabase
           .from('email_log')
           .select(SELECT)
           .eq('competition_id', competitionId)
-          .is('batch_id', null)
+          .is('recipient_count', null)
           .order('sent_at', { ascending: false })
           .limit(1000),
         supabase
@@ -239,7 +259,7 @@ function CompetitionEmailLog({ competitionId }: { competitionId: string }) {
                       {g.notSent.map(({ member, error }) => (
                         <li key={member.id} className="text-xs text-red-700">
                           {member.first_name} {member.last_name}
-                          {error && <span className="text-red-500"> — failed: {error}</span>}
+                          {error && !isNotSent(error) && <span className="text-red-500"> — failed: {error}</span>}
                         </li>
                       ))}
                     </ul>
@@ -257,12 +277,55 @@ function CompetitionEmailLog({ competitionId }: { competitionId: string }) {
       })}
       {groups.some(g => g.notSent && g.notSent.length > 0) && (
         <p className="text-xs text-gray-400">
-          "Not sent" counts members who are active now and had joined before the email first went out
-          (results: members with entries), but have no successful send.
+          "Not sent" lists members a send never reached or failed for. For sends logged before
+          recipient tracking, it's inferred: members active now who had joined before the email
+          first went out (results: members with entries).
         </p>
       )}
     </div>
   )
+}
+
+/**
+ * Members who should have had this email but have no successful send:
+ * anyone a bulk run logged as unsent or failed, plus — for sends logged
+ * before runs recorded their audience — active members who had joined by the
+ * first send (all-member emails) or entrants (results). Null where neither applies.
+ */
+export function findNotSent(
+  type: string,
+  rows: Pick<EmailRow, 'member_id' | 'error'>[],
+  firstSentAt: string,
+  members: MemberLite[],
+  entrantIds: Set<string>,
+): Array<{ member: MemberLite; error: string | null }> | null {
+  const sentMembers = new Set(rows.filter(r => !r.error).map(r => r.member_id).filter((id): id is string => !!id))
+  const expected = new Set(rows.map(r => r.member_id).filter((id): id is string => !!id))
+  const inferred = ALL_MEMBER_TYPES.has(type) || type === 'results_notification'
+
+  if (ALL_MEMBER_TYPES.has(type)) {
+    for (const m of members) {
+      if (
+        m.status === 'active' &&
+        !m.email.endsWith('@privacy.wcc.local') &&
+        // Timestamps vary in fractional precision, so compare as dates, not strings.
+        new Date(m.created_at) <= new Date(firstSentAt)
+      ) expected.add(m.id)
+    }
+  } else if (type === 'results_notification') {
+    for (const m of members) {
+      if (entrantIds.has(m.id) && !m.email.endsWith('@privacy.wcc.local')) expected.add(m.id)
+    }
+  }
+
+  const missing = members
+    .filter(m => expected.has(m.id) && !sentMembers.has(m.id))
+    .map(member => ({
+      member,
+      error: rows.find(r => r.member_id === member.id && r.error)?.error ?? null,
+    }))
+  if (!inferred && missing.length === 0) return null
+  return missing
 }
 
 function buildGroups(rows: EmailRow[], members: MemberLite[], entrantIds: Set<string>): EmailGroup[] {
@@ -282,23 +345,7 @@ function buildGroups(rows: EmailRow[], members: MemberLite[], entrantIds: Set<st
     // Judge invites and one-off sends have no member to count by.
     const sentCount = sentMembers.size || new Set(ok.map(r => r.recipient_email)).size
 
-    let expected: MemberLite[] | null = null
-    if (ALL_MEMBER_TYPES.has(type)) {
-      expected = members.filter(m =>
-        m.status === 'active' &&
-        !m.email.endsWith('@privacy.wcc.local') &&
-        // Timestamps vary in fractional precision, so compare as dates, not strings.
-        new Date(m.created_at) <= new Date(firstSentAt),
-      )
-    } else if (type === 'results_notification') {
-      expected = members.filter(m => entrantIds.has(m.id) && !m.email.endsWith('@privacy.wcc.local'))
-    }
-
-    const notSent = expected?.filter(m => !sentMembers.has(m.id)).map(member => ({
-      member,
-      error: list.find(r => r.member_id === member.id && r.error)?.error ?? null,
-    })) ?? null
-
+    const notSent = findNotSent(type, list, firstSentAt, members, entrantIds)
     groups.push({ type, rows: list, firstSentAt, sentCount, notSent })
   }
 

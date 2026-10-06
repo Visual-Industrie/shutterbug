@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 import { Resend } from 'resend'
 import { getPool } from './db.js'
 
@@ -89,6 +90,8 @@ export interface SendEmailOptions {
   tokenId?: string | null
   /** Overrides the configured reply-to for this send. */
   replyTo?: string | null
+  /** A bulk run's pending email_log row to fill in, instead of inserting a new one. */
+  logId?: string | null
 }
 
 /**
@@ -130,25 +133,184 @@ export async function sendEmail(opts: SendEmailOptions): Promise<string | null> 
     console.log(`Body:\n${html}\n`)
   }
 
-  await getPool().query(
-    `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, judge_id, competition_id, token_id, subject, body, error)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [
-      opts.type,
-      opts.to,
-      opts.toName ?? null,
-      opts.memberId ?? null,
-      opts.judgeId ?? null,
-      opts.competitionId ?? null,
-      opts.tokenId ?? null,
-      opts.subject,
-      opts.html,
-      error,
-    ],
-  )
+  if (opts.logId) {
+    await getPool().query(
+      `UPDATE email_log
+       SET recipient_email = $2, recipient_name = $3, token_id = $4, subject = $5, body = $6, error = $7, sent_at = NOW()
+       WHERE id = $1`,
+      [opts.logId, opts.to, opts.toName ?? null, opts.tokenId ?? null, opts.subject, opts.html, error],
+    )
+  } else {
+    await getPool().query(
+      `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, judge_id, competition_id, token_id, subject, body, error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        opts.type,
+        opts.to,
+        opts.toName ?? null,
+        opts.memberId ?? null,
+        opts.judgeId ?? null,
+        opts.competitionId ?? null,
+        opts.tokenId ?? null,
+        opts.subject,
+        opts.html,
+        error,
+      ],
+    )
+  }
 
   if (thrown) throw thrown
   return error
+}
+
+// ─── Bulk runs ────────────────────────────────────────────────────────────────
+
+/**
+ * Error on a bulk run's member row until that member's message actually goes.
+ * If the run is cut short, the rows still carrying it show exactly who was missed.
+ */
+export const NOT_SENT_ERROR = 'Not sent — the send stopped before reaching this member'
+
+/**
+ * Logs a bulk run up front: one summary row (recipient_count = the full
+ * audience) plus a pending child row per recipient, linked by batch_id.
+ * Returns the batch id and each recipient's row id, in recipient order.
+ */
+async function startBulkRun(opts: {
+  type: string
+  subject: string
+  recipients: BulkRecipient[]
+  competitionId?: string | null
+  /** Shown as the summary's To — the club copy address for group sends. */
+  summaryTo?: string
+  body?: string | null
+}): Promise<{ batchId: string; logIds: string[] }> {
+  const pool = getPool()
+  const total = opts.recipients.length
+  const batchId = randomUUID()
+  const logIds = opts.recipients.map(() => randomUUID())
+
+  await pool.query(
+    `INSERT INTO email_log (id, type, recipient_email, recipient_name, competition_id, subject, body, recipient_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      batchId,
+      opts.type,
+      opts.summaryTo ?? '',
+      `${total} recipient${total === 1 ? '' : 's'}`,
+      opts.competitionId ?? null,
+      opts.subject,
+      opts.body ?? null,
+      total,
+    ],
+  )
+
+  if (total > 0) {
+    await pool.query(
+      `INSERT INTO email_log (id, type, recipient_email, recipient_name, member_id, competition_id, subject, error, batch_id)
+       SELECT t.id, $1, t.email, t.name, t.member_id, $2, $3, $4, $5
+       FROM unnest($6::uuid[], $7::text[], $8::text[], $9::uuid[]) AS t(id, email, name, member_id)`,
+      [
+        opts.type,
+        opts.competitionId ?? null,
+        opts.subject,
+        NOT_SENT_ERROR,
+        batchId,
+        logIds,
+        opts.recipients.map(r => r.email),
+        opts.recipients.map(r => r.name ?? null),
+        opts.recipients.map(r => r.id ?? null),
+      ],
+    )
+  }
+
+  return { batchId, logIds }
+}
+
+async function finishBulkRun(batchId: string, total: number, skipped: number, errors: Iterable<string>, extra?: string) {
+  const parts: string[] = []
+  if (skipped > 0) parts.push(`${skipped} of ${total} failed: ${[...new Set(errors)].join('; ')}`)
+  if (extra) parts.push(extra)
+  if (parts.length) {
+    await getPool().query(`UPDATE email_log SET error = $1 WHERE id = $2`, [parts.join(' · '), batchId])
+  }
+}
+
+async function markLogFailed(logId: string, error: string) {
+  await getPool().query(`UPDATE email_log SET error = $1, sent_at = NOW() WHERE id = $2`, [error, logId])
+}
+
+export interface RunMember {
+  id: string
+  first_name: string
+  last_name: string
+  email: string
+}
+
+export interface RunResult {
+  sent: number
+  skipped: number
+  errors: string[]
+}
+
+/**
+ * Sends one personalised email per member, one at a time, as a logged bulk
+ * run. A rejected or thrown send counts as a failure and is recorded on that
+ * member's row; it never stops the rest of the run.
+ */
+export async function sendPersonalisedRun(opts: {
+  type: string
+  /** Summary title for the log, e.g. "Deadline reminder — Astrophotography". */
+  subject: string
+  competitionId?: string | null
+  members: RunMember[]
+  build: (m: RunMember) => Promise<{ subject: string; html: string; tokenId?: string | null }>
+}): Promise<RunResult> {
+  let sent = 0, skipped = 0
+  const errors: string[] = []
+  if (opts.members.length === 0) return { sent, skipped, errors }
+
+  const name = (m: RunMember) => `${m.first_name} ${m.last_name}`
+  const { batchId, logIds } = await startBulkRun({
+    type: opts.type,
+    subject: opts.subject,
+    competitionId: opts.competitionId,
+    recipients: opts.members.map(m => ({ id: m.id, email: m.email, name: name(m) })),
+  })
+
+  await withSendCache(async () => {
+    for (const [i, m] of opts.members.entries()) {
+      try {
+        const { subject, html, tokenId } = await opts.build(m)
+        const error = await sendEmail({
+          type: opts.type,
+          to: m.email,
+          toName: name(m),
+          subject,
+          html,
+          memberId: m.id,
+          competitionId: opts.competitionId,
+          tokenId,
+          logId: logIds[i],
+        })
+        if (error) {
+          errors.push(`${m.email}: ${error}`)
+          skipped++
+        } else {
+          sent++
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${m.email}: ${msg}`)
+        skipped++
+        // sendEmail has already recorded a thrown send; this covers failures before it.
+        await markLogFailed(logIds[i], msg).catch(() => {})
+      }
+    }
+  })
+
+  await finishBulkRun(batchId, opts.members.length, skipped, errors.map(e => e.slice(e.indexOf(': ') + 2)))
+  return { sent, skipped, errors }
 }
 
 // ─── Bulk send ────────────────────────────────────────────────────────────────
@@ -188,8 +350,9 @@ export interface SendBulkEmailResult {
  * Only safe for bodies with no per-member personalisation — personalised mail
  * must still go via sendEmail().
  *
- * Writes one summary row to email_log for the group, plus a child row per
- * recipient (linked by batch_id) so the per-member audit trail and search work.
+ * Logged as a bulk run (see startBulkRun): one summary row for the group plus
+ * a child row per recipient, so the per-member audit trail and search work and
+ * anyone the run never reached stays marked as not sent.
  */
 export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBulkEmailResult> {
   const html = styleLinks(opts.html + await getFooterHtml())
@@ -227,38 +390,26 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
   }
 
   const total = opts.recipients.length
-
-  // Summary row for the group, so the log shows one entry per send. Written up
-  // front (and its error filled in at the end) so that each member's row below
-  // can be logged the moment their message goes — if the run is cut short, the
-  // log still shows exactly who was reached.
-  const summary = await pool.query(
-    `INSERT INTO email_log (type, recipient_email, recipient_name, competition_id, subject, body, recipient_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [
-      opts.type,
-      toAddress,
-      `${total} recipient${total === 1 ? '' : 's'}`,
-      opts.competitionId ?? null,
-      opts.subject,
-      opts.html,
-      total,
-    ],
-  )
-  const batchId: string = summary.rows[0].id
+  const { batchId, logIds } = await startBulkRun({
+    type: opts.type,
+    subject: opts.subject,
+    recipients: opts.recipients,
+    competitionId: opts.competitionId,
+    summaryTo: toAddress,
+    body: opts.html,
+  })
 
   const errors = new Set<string>()
   let sent = 0, skipped = 0
 
   // Sequential rather than parallel: awaiting each send in turn keeps the club
   // domain trickling mail out instead of bursting it at the receiving servers.
-  for (const r of opts.recipients) {
+  for (const [i, r] of opts.recipients.entries()) {
     const error = await deliver(r.email, r.name)
     if (error) { skipped++; errors.add(error) } else sent++
     await pool.query(
-      `INSERT INTO email_log (type, recipient_email, recipient_name, member_id, competition_id, subject, body, error, batch_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [opts.type, r.email, r.name ?? null, r.id ?? null, opts.competitionId ?? null, opts.subject, opts.html, error, batchId],
+      `UPDATE email_log SET body = $2, error = $3, sent_at = NOW() WHERE id = $1`,
+      [logIds[i], opts.html, error],
     )
   }
 
@@ -267,12 +418,7 @@ export async function sendBulkEmail(opts: SendBulkEmailOptions): Promise<SendBul
   const clubError = await deliver(toAddress)
   if (clubError) errors.add(clubError)
 
-  if (skipped > 0 || clubError) {
-    const summaryError = skipped > 0
-      ? `${skipped} of ${total} failed: ${[...errors].join('; ')}`
-      : `Club copy failed: ${clubError}`
-    await pool.query(`UPDATE email_log SET error = $1 WHERE id = $2`, [summaryError, batchId])
-  }
+  await finishBulkRun(batchId, total, skipped, errors, clubError ? `Club copy failed: ${clubError}` : undefined)
 
   return { sent, skipped, errors: [...errors] }
 }

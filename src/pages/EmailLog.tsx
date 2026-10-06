@@ -6,7 +6,7 @@ import Link from '@tiptap/extension-link'
 import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
-import { EMAIL_TYPE_LABELS as TYPE_LABELS } from '@/components/admin/EmailLogList'
+import EmailActivityList from '@/components/admin/EmailActivityList'
 
 
 type Recipients = 'all_active' | 'subs_unpaid' | 'member'
@@ -263,8 +263,6 @@ export default function EmailLog() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<'log' | 'templates'>('log')
-  const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null)
 
   // Compose modal
@@ -280,45 +278,6 @@ export default function EmailLog() {
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<{ sent: number; skipped: number; errors?: string[] } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
-
-  // Top-level rows only: a bulk send's per-member rows hang off its summary row
-  // via batch_id and are loaded separately, so one group email takes one slot here.
-  const { data: allEmails = [], isLoading: logLoading } = useQuery({
-    queryKey: ['emails'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('email_log')
-        .select('id,type,recipient_email,recipient_name,subject,body,sent_at,error,recipient_count')
-        .is('batch_id', null)
-        .order('sent_at', { ascending: false })
-        .limit(200)
-      return data ?? []
-    },
-  })
-
-  const batchIds = allEmails.filter(e => e.recipient_count != null).map(e => e.id)
-
-  // Children of the listed batches, so recipient search and the expanded
-  // recipient list both work without a round-trip per row.
-  const { data: batchMembers = [] } = useQuery({
-    queryKey: ['email-batch-members', batchIds],
-    enabled: batchIds.length > 0,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('email_log')
-        .select('id,batch_id,recipient_email,recipient_name,error')
-        .in('batch_id', batchIds)
-      return data ?? []
-    },
-  })
-
-  const membersByBatch = new Map<string, typeof batchMembers>()
-  for (const m of batchMembers) {
-    if (!m.batch_id) continue
-    const list = membersByBatch.get(m.batch_id)
-    if (list) list.push(m)
-    else membersByBatch.set(m.batch_id, [m])
-  }
 
   // Configured default To / Reply-to, used to prefill the composer.
   const { data: emailSettings = [] } = useQuery<{ key: string; value: string | null; default_value: string | null }[]>({
@@ -353,27 +312,6 @@ export default function EmailLog() {
       setSelectedTemplateKey(templates[0].key)
     }
   }, [templates, selectedTemplateKey])
-
-  const emails = search
-    ? allEmails.filter(e => {
-        const q = search.toLowerCase()
-        // A group send also matches on any of the members it went out to.
-        const matchesRecipient = (email: string, name: string | null) =>
-          email.toLowerCase().includes(q) || (name ?? '').toLowerCase().includes(q)
-        return (
-          e.subject.toLowerCase().includes(q) ||
-          matchesRecipient(e.recipient_email, e.recipient_name) ||
-          (membersByBatch.get(e.id) ?? []).some(m => matchesRecipient(m.recipient_email, m.recipient_name))
-        )
-      })
-    : allEmails
-
-  function fmt(d: string) {
-    return new Date(d).toLocaleString('en-NZ', {
-      day: 'numeric', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  }
 
   async function searchMembers(q: string) {
     if (!q.trim()) { setMemberOptions([]); return }
@@ -471,76 +409,7 @@ export default function EmailLog() {
       </div>
 
       {/* ── Log tab ── */}
-      {tab === 'log' && (
-        <>
-          <input
-            type="search"
-            placeholder="Search subject, recipient…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4"
-          />
-
-          {logLoading ? (
-            <div className="text-center text-gray-400 py-8">Loading…</div>
-          ) : emails.length === 0 ? (
-            <div className="text-center text-gray-400 py-8">No emails logged yet</div>
-          ) : (
-            <div className="space-y-1">
-              {emails.map(e => (
-                <div key={e.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <button
-                    onClick={() => setExpanded(expanded === e.id ? null : e.id)}
-                    className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-gray-900 truncate">{e.subject}</span>
-                        {e.error && <span className="text-xs text-red-500">⚠ Failed</span>}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {e.recipient_name ?? e.recipient_email}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-xs text-gray-400">{fmt(e.sent_at)}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{TYPE_LABELS[e.type] ?? e.type}</div>
-                    </div>
-                    <span className="text-gray-400 text-xs">{expanded === e.id ? '▲' : '▼'}</span>
-                  </button>
-
-                  {expanded === e.id && (
-                    <div className="px-4 pb-4 border-t border-gray-100 text-sm space-y-2 pt-3">
-                      <div className="text-xs text-gray-500">
-                        <span className="font-medium">To:</span> {e.recipient_email}
-                      </div>
-                      {e.recipient_count != null && (
-                        <div className="text-xs text-gray-500">
-                          <span className="font-medium">Recipients:</span>{' '}
-                          {(membersByBatch.get(e.id) ?? []).length
-                            ? (membersByBatch.get(e.id) ?? [])
-                                .map(m => m.recipient_name ?? m.recipient_email)
-                                .join(', ')
-                            : `${e.recipient_count} recipient${e.recipient_count === 1 ? '' : 's'}`}
-                        </div>
-                      )}
-                      {e.error && (
-                        <div className="text-xs text-red-600 bg-red-50 rounded p-2">{e.error}</div>
-                      )}
-                      {e.body && (
-                        <div
-                          className="text-gray-700 text-sm prose prose-sm max-w-none"
-                          dangerouslySetInnerHTML={{ __html: e.body }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      {tab === 'log' && <EmailActivityList />}
 
       {/* ── Templates tab ── */}
       {tab === 'templates' && (

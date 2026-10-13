@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
 interface Judge {
@@ -154,16 +153,7 @@ export default function Judges() {
 
   const { data: allJudges = [], isLoading } = useQuery<Judge[]>({
     queryKey: ['judges'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('judges')
-        .select('id,name,email,bio,address,rating,is_available,website,facebook,instagram,competition_judges(id)')
-        .order('name')
-      return (data ?? []).map((j: Record<string, unknown>) => ({
-        ...(j as Omit<Judge, 'comp_count'>),
-        comp_count: Array.isArray(j.competition_judges) ? j.competition_judges.length : 0,
-      }))
-    },
+    queryFn: () => apiFetch<Judge[]>('/api/judges'),
   })
 
   const judges = allJudges.filter(j => {
@@ -214,14 +204,7 @@ export default function Judges() {
     setViewing(j)
     setViewComps([])
     setViewLoading(true)
-    const { data } = await supabase
-      .from('competition_judges')
-      .select('competitions(id, name, opens_at, status)')
-      .eq('judge_id', j.id)
-    const comps = (data ?? [])
-      .map((r: Record<string, unknown>) => r.competitions as JudgedComp | null)
-      .filter((c): c is JudgedComp => c != null)
-      .sort((a, b) => (b.opens_at ?? '').localeCompare(a.opens_at ?? ''))
+    const comps = await apiFetch<JudgedComp[]>(`/api/judges/${j.id}/competitions`).catch(() => [])
     setViewComps(comps)
     setViewLoading(false)
   }

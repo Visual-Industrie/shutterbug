@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
 interface Kpis {
@@ -77,77 +76,47 @@ export default function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: async () => {
-      const { data: season } = await supabase
-        .from('seasons')
-        .select('id')
-        .eq('is_current_event_year', true)
-        .single()
+      const { comps, counts } = await apiFetch<{
+        comps: Array<Omit<EventRow, 'judge_name'> & { competition_judges: Array<{ judges: { name: string } }> }>
+        counts: {
+          current_members: number
+          life_members: number
+          committee_count: number
+          pending_applicants: number
+          judges_available: number
+          recent_submitters: number
+        }
+      }>('/api/dashboard')
 
-      const seasonId = season?.id
-
-      const { data: comps } = await supabase
-        .from('competitions')
-        .select('id, name, event_type, status, opens_at, closes_at, judging_closes_at, competition_judges(judges(name)), entries(type)')
-        .eq('season_id', seasonId ?? '')
-        .order('opens_at', { ascending: true })
-
-      const noJudge = comps?.filter(c =>
+      const noJudge = comps.filter(c =>
         c.event_type === 'competition' &&
         c.status !== 'complete' &&
-        (!c.competition_judges || c.competition_judges.length === 0)
-      ).length ?? 0
+        c.competition_judges.length === 0
+      ).length
 
-      const remaining = comps?.filter(c =>
+      const remaining = comps.filter(c =>
         c.event_type === 'competition' && c.status !== 'complete'
-      ).length ?? 0
+      ).length
 
-      const openComp = comps?.find(c => c.status === 'open')
-      const printimOpen = openComp?.entries?.filter((e: { type: string }) => e.type === 'printim').length ?? 0
-      const projimOpen  = openComp?.entries?.filter((e: { type: string }) => e.type === 'projim').length ?? 0
-
-      const [
-        { count: currentMembers },
-        { count: lifeMembers },
-        { count: committeeCount },
-        { count: pendingApplicants },
-        { count: judgesAvailable },
-        { data: recentEntries },
-      ] = await Promise.all([
-        supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-        supabase.from('members').select('*', { count: 'exact', head: true }).eq('membership_type', 'life').eq('status', 'active'),
-        apiFetch<{ count: number }>('/api/admin-users/count'),
-        supabase.from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('judges').select('*', { count: 'exact', head: true }).eq('is_available', true),
-        supabase.from('entries').select('member_id').gte('submitted_at', new Date(Date.now() - 90 * 864e5).toISOString()),
-      ])
-
-      const recentSubmitters = new Set(recentEntries?.map(e => e.member_id)).size
+      const openComp = comps.find(c => c.status === 'open')
 
       const kpis: Kpis = {
         noJudgeCount: noJudge,
         competitionsRemaining: remaining,
-        judgesAvailable: judgesAvailable ?? 0,
-        competitionsOpen: comps?.filter(c => c.status === 'open').length ?? 0,
-        printimOpen,
-        projimOpen,
-        currentMembers: currentMembers ?? 0,
-        lifeMembers: lifeMembers ?? 0,
-        recentSubmitters,
-        pendingApplicants: pendingApplicants ?? 0,
-        committeeCount: committeeCount ?? 0,
+        judgesAvailable: counts.judges_available,
+        competitionsOpen: comps.filter(c => c.status === 'open').length,
+        printimOpen: openComp?.printim_count ?? 0,
+        projimOpen: openComp?.projim_count ?? 0,
+        currentMembers: counts.current_members,
+        lifeMembers: counts.life_members,
+        recentSubmitters: counts.recent_submitters,
+        pendingApplicants: counts.pending_applicants,
+        committeeCount: counts.committee_count,
       }
 
-      const events: EventRow[] = (comps ?? []).map(c => ({
-        id: c.id,
-        name: c.name,
-        event_type: c.event_type,
-        status: c.status,
-        opens_at: c.opens_at,
-        closes_at: c.closes_at,
-        judging_closes_at: c.judging_closes_at,
-        judge_name: (c.competition_judges as unknown as Array<{ judges: { name: string } | null }>)?.[0]?.judges?.name ?? null,
-        printim_count: (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'printim').length ?? 0,
-        projim_count:  (c.entries as Array<{ type: string }>)?.filter(e => e.type === 'projim').length ?? 0,
+      const events: EventRow[] = comps.map(({ competition_judges, ...c }) => ({
+        ...c,
+        judge_name: competition_judges[0]?.judges.name ?? null,
       }))
 
       return { kpis, events }

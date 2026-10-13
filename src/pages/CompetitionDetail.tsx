@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { compressImage } from '@/lib/image'
 import EmailLogList from '@/components/admin/EmailLogList'
@@ -195,37 +194,7 @@ export default function CompetitionDetail() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['competition', id],
-    queryFn: async () => {
-      const { data: comp } = await supabase
-        .from('competitions')
-        .select(`
-          id, name, event_type, description, status, opens_at, closes_at,
-          judging_opens_at, judging_closes_at,
-          max_projim_entries, max_printim_entries,
-          points_honours, points_highly_commended, points_commended, points_accepted,
-          seasons(year),
-          competition_judges(judges(id, name, email))
-        `)
-        .eq('id', id!)
-        .single()
-
-      const { data: entryData } = await supabase
-        .from('entries')
-        .select('type, award')
-        .eq('competition_id', id!)
-
-      const counts: Record<string, number> = {}
-      for (const e of entryData ?? []) {
-        const key = `${e.type}|${e.award ?? 'none'}`
-        counts[key] = (counts[key] ?? 0) + 1
-      }
-      const entries: EntrySummary[] = Object.entries(counts).map(([k, count]) => {
-        const [type, award] = k.split('|')
-        return { type, award: award === 'none' ? null : award, count }
-      })
-
-      return { comp: comp as CompDetail | null, entries }
-    },
+    queryFn: () => apiFetch<{ comp: CompDetail | null; entries: EntrySummary[] }>(`/api/competitions/${id}`),
   })
 
   const editMutation = useMutation({
@@ -298,12 +267,12 @@ export default function CompetitionDetail() {
     const next = STATUS_FLOW[STATUS_FLOW.indexOf(comp.status) + 1]
     if (!next) return
     setWorking(true)
-    const { error } = await supabase.from('competitions').update({ status: next }).eq('id', comp.id)
-    if (error) {
-      setActionMsg({ text: `Failed to advance status: ${error.message}`, ok: false })
-    } else {
-      setActionMsg({ text: `Status updated to ${next}.`, ok: true })
+    try {
+      const { status } = await apiFetch<{ status: string }>(`/api/competitions/${comp.id}/advance-status`, { method: 'POST' })
+      setActionMsg({ text: `Status updated to ${status}.`, ok: true })
       queryClient.invalidateQueries({ queryKey: ['competition', id] })
+    } catch (err) {
+      setActionMsg({ text: `Failed to advance status: ${err instanceof Error ? err.message : 'Error'}`, ok: false })
     }
     setWorking(false)
   }
@@ -343,13 +312,8 @@ export default function CompetitionDetail() {
   }
 
   async function openSingleInvite() {
-    const { data } = await supabase
-      .from('members')
-      .select('id, first_name, last_name, email')
-      .eq('status', 'active')
-      .not('email', 'like', '%@privacy.wcc.local')
-      .order('last_name')
-    setMemberOptions((data ?? []) as typeof memberOptions)
+    const data = await apiFetch<typeof memberOptions>('/api/members?status=active&exclude_private=1').catch(() => [])
+    setMemberOptions(data)
     setSelectedMemberId('')
     setMemberSearch('')
     setSingleInviteError(null)
@@ -375,8 +339,8 @@ export default function CompetitionDetail() {
   }
 
   async function openAssignJudge() {
-    const { data } = await supabase.from('judges').select('id,name,email,is_available').order('name')
-    setJudgeOptions((data ?? []) as JudgeOption[])
+    const data = await apiFetch<JudgeOption[]>('/api/judges').catch(() => [])
+    setJudgeOptions(data)
     const current = comp?.competition_judges?.[0]?.judges
     setSelectedJudgeId(current?.id ?? '')
     setJudgeSearch('')
@@ -401,12 +365,8 @@ export default function CompetitionDetail() {
   }
 
   async function openAddEntry() {
-    const { data } = await supabase
-      .from('members')
-      .select('id, first_name, last_name, membership_number')
-      .eq('status', 'active')
-      .order('last_name')
-    setEntryMemberOptions((data ?? []) as typeof entryMemberOptions)
+    const data = await apiFetch<typeof entryMemberOptions>('/api/members?status=active').catch(() => [])
+    setEntryMemberOptions(data)
     setEditingEntry(null)
     setEntryMemberId('')
     setEntryMemberSearch('')

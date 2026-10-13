@@ -11,10 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase
+        # /api/health runs a query against Postgres, which is what counts as activity
         run: |
-          curl -sf \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+          curl -sf "${{ secrets.APP_URL }}/api/health" \
             && echo "Supabase ping successful" \
             || echo "Supabase ping failed (project may already be awake)"

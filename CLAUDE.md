@@ -50,7 +50,7 @@ src/
     schema.ts       # Drizzle ORM schema (source of truth)
     client.ts       # Server-side DB client (Vercel API functions only)
   lib/
-    supabase.ts     # Supabase browser client
+    api.ts          # apiFetch — the only way the frontend reads or writes data
   types/
     supabase.ts     # Generated types (npm run types:gen)
 api/                # Vercel serverless functions
@@ -83,12 +83,13 @@ supabase/
 - Only one `season` should have `is_current = TRUE` at any time.
 - Judges see member number only — never member name (anonymity).
 - All emails (success or failure) must be written to `email_log`.
+- Every new table migration must `enable row level security` (no policies). All data access goes through `/api` — the frontend never talks to Supabase directly.
 
 ### External Services
 - **Google Drive**: stores all entry images; DB stores `drive_file_id`, `drive_file_url`, `drive_thumbnail_url`.
 - **Google Sheets**: one-time seed source only — all live data in Postgres.
 - **Resend**: transactional email delivery.
-- **GitHub Actions** (`keep-alive.yml`): pings Supabase every 3 days to prevent free tier pause. Requires `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Actions secrets.
+- **GitHub Actions** (`keep-alive.yml`): hits `/api/health` (a `SELECT 1` against Postgres) every 3 days to prevent free tier pause. Requires `APP_URL` as an Actions secret.
 
 ## Suggested Build Order
 

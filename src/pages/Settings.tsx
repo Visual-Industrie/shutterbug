@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { apiFetch } from '@/lib/api'
-import { supabase } from '@/lib/supabase'
 import { Navigate } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -745,14 +744,10 @@ export default function Settings() {
   // Member search
   async function searchMembers(q: string) {
     if (!q.trim()) { setMemberOptions([]); return }
-    const { data } = await supabase
-      .from('members')
-      .select('id, first_name, last_name, email, membership_number')
-      .ilike('last_name', `%${q}%`)
-      .eq('status', 'active')
-      .order('last_name')
-      .limit(20)
-    setMemberOptions((data ?? []) as MemberOption[])
+    const data = await apiFetch<MemberOption[]>(
+      `/api/members?status=active&limit=20&q=${encodeURIComponent(q)}`,
+    ).catch(() => [])
+    setMemberOptions(data)
   }
 
   async function addRole() {

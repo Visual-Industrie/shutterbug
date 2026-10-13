@@ -3,7 +3,6 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import EmailActivityList from '@/components/admin/EmailActivityList'
@@ -315,15 +314,10 @@ export default function EmailLog() {
 
   async function searchMembers(q: string) {
     if (!q.trim()) { setMemberOptions([]); return }
-    const { data } = await supabase
-      .from('members')
-      .select('id, first_name, last_name, email')
-      .eq('status', 'active')
-      .ilike('last_name', `%${q}%`)
-      .not('email', 'like', '%@privacy.wcc.local')
-      .order('last_name')
-      .limit(20)
-    setMemberOptions((data ?? []) as MemberOption[])
+    const data = await apiFetch<MemberOption[]>(
+      `/api/members?status=active&exclude_private=1&limit=20&q=${encodeURIComponent(q)}`,
+    ).catch(() => [])
+    setMemberOptions(data)
   }
 
   function openCompose() {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { apiFetch } from '@/lib/api'
 
 export const EMAIL_TYPE_LABELS: Record<string, string> = {
   submission_invite: 'Submission invite',
@@ -48,8 +48,6 @@ function fmt(d: string) {
   })
 }
 
-const SELECT = 'id,type,member_id,recipient_email,recipient_name,subject,body,sent_at,error'
-
 /**
  * Email log scoped to one member (every email sent to them, including their
  * copy of group sends) or one competition (grouped by email type, with who
@@ -74,10 +72,7 @@ export function EmailRowItem({ e, title, subtitle }: {
   const { data: lazyBody } = useQuery({
     queryKey: ['email-body', e.id],
     enabled: open && e.body === undefined,
-    queryFn: async () => {
-      const { data } = await supabase.from('email_log').select('body').eq('id', e.id).single()
-      return (data?.body as string | null) ?? null
-    },
+    queryFn: async () => (await apiFetch<{ body: string | null }>(`/api/email-log/${e.id}/body`)).body,
   })
   const body = e.body === undefined ? lazyBody : e.body
   return (
@@ -128,17 +123,7 @@ function MemberEmailLog({ memberId }: { memberId: string }) {
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['email-log', 'member', memberId],
-    queryFn: async () => {
-      // Per-member rows only — a group send's summary row has no member.
-      const { data, error } = await supabase
-        .from('email_log')
-        .select(SELECT)
-        .eq('member_id', memberId)
-        .order('sent_at', { ascending: false })
-        .limit(500)
-      if (error) throw error
-      return (data ?? []) as EmailRow[]
-    },
+    queryFn: () => apiFetch<EmailRow[]>(`/api/members/${memberId}/email-log`),
   })
 
   const counts = new Map<string, { sent: number; failed: number }>()
@@ -198,31 +183,11 @@ function CompetitionEmailLog({ competitionId }: { competitionId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['email-log', 'competition', competitionId],
     queryFn: async () => {
-      // One row per member: a bulk run's summary row is left out (its
-      // per-member rows carry who was and wasn't reached).
-      const [log, members, entrants] = await Promise.all([
-        supabase
-          .from('email_log')
-          .select(SELECT)
-          .eq('competition_id', competitionId)
-          .is('recipient_count', null)
-          .order('sent_at', { ascending: false })
-          .limit(1000),
-        supabase
-          .from('members')
-          .select('id,first_name,last_name,status,email,created_at')
-          .order('last_name')
-          .order('first_name'),
-        supabase.from('entries').select('member_id').eq('competition_id', competitionId),
+      const [log, members] = await Promise.all([
+        apiFetch<{ rows: EmailRow[]; entrantIds: string[] }>(`/api/competitions/${competitionId}/email-log`),
+        apiFetch<MemberLite[]>('/api/members'),
       ])
-      if (log.error) throw log.error
-      if (members.error) throw members.error
-      if (entrants.error) throw entrants.error
-      return {
-        rows: (log.data ?? []) as EmailRow[],
-        members: (members.data ?? []) as MemberLite[],
-        entrantIds: new Set((entrants.data ?? []).map(e => e.member_id as string)),
-      }
+      return { rows: log.rows, members, entrantIds: new Set(log.entrantIds) }
     },
   })
 

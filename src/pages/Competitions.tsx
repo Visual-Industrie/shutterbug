@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -114,37 +113,7 @@ export default function Competitions() {
 
   const { data: allComps = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['competitions'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('competitions')
-        .select(`
-          id, name, event_type, status, opens_at, closes_at, judging_closes_at,
-          seasons(year),
-          competition_judges(judges(name))
-        `)
-        .order('opens_at', { ascending: false })
-
-      const compIds = (data ?? []).map(c => c.id)
-      let entryCounts: Record<string, { printim: number; projim: number }> = {}
-      if (compIds.length > 0) {
-        const { data: entries } = await supabase
-          .from('entries')
-          .select('competition_id, type')
-          .in('competition_id', compIds)
-        for (const e of entries ?? []) {
-          if (!entryCounts[e.competition_id]) entryCounts[e.competition_id] = { printim: 0, projim: 0 }
-          if (e.type === 'printim') entryCounts[e.competition_id].printim++
-          else entryCounts[e.competition_id].projim++
-        }
-      }
-
-      return (data ?? []).map(c => ({
-        ...c,
-        competition_judges: c.competition_judges as unknown as Array<{ judges: { name: string } | null }>,
-        printim_count: entryCounts[c.id]?.printim ?? 0,
-        projim_count: entryCounts[c.id]?.projim ?? 0,
-      })) as unknown as Competition[]
-    },
+    queryFn: () => apiFetch<Competition[]>('/api/competitions'),
   })
 
   const comps = allComps.filter(c => {

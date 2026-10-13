@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 import EmailLogList from '@/components/admin/EmailLogList'
 
@@ -125,13 +124,7 @@ export default function Members() {
 
   const { data: allMembers = [], isLoading } = useQuery({
     queryKey: ['members'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('members')
-        .select('id,first_name,last_name,email,phone,address,membership_number,status,membership_type,subs_paid,subs_due_date,joined_date,experience_level,annual_sub_amount')
-        .order('last_name', { ascending: true })
-      return data ?? []
-    },
+    queryFn: () => apiFetch<Member[]>('/api/members'),
   })
 
   const members = allMembers.filter(m => {

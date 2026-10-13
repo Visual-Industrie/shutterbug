@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { apiFetch } from '@/lib/api'
 
 interface LeaderRow {
   member_id: string
@@ -24,45 +24,16 @@ export default function Leaderboard() {
   const { data: seasons = [] } = useQuery<Season[]>({
     queryKey: ['seasons'],
     queryFn: async () => {
-      const [{ data: all }, { data: current }] = await Promise.all([
-        supabase.from('seasons').select('id, year').order('year', { ascending: false }),
-        supabase.from('seasons').select('id').eq('is_current_event_year', true).single(),
-      ])
+      const all = await apiFetch<(Season & { is_current_event_year: boolean })[]>('/api/seasons')
+      const current = all.find(s => s.is_current_event_year)
       if (current && !seasonId) setSeasonId(current.id)
-      return (all ?? []) as Season[]
+      return all
     },
   })
 
   const { data: allRows = [], isLoading } = useQuery<LeaderRow[]>({
     queryKey: ['points', seasonId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('member_points')
-        .select('member_id, entry_type, points, members(first_name, last_name)')
-        .eq('season_id', seasonId)
-
-      const totals = new Map<string, LeaderRow>()
-      for (const r of data ?? []) {
-        const m = r.members as unknown as { first_name: string; last_name: string } | null
-        const name = m ? `${m.first_name} ${m.last_name}` : r.member_id
-        const existing = totals.get(r.member_id)
-        if (existing) {
-          if (r.entry_type === 'projim') existing.projim += r.points
-          else existing.printim += r.points
-          existing.total += r.points
-        } else {
-          totals.set(r.member_id, {
-            member_id: r.member_id,
-            name,
-            projim: r.entry_type === 'projim' ? r.points : 0,
-            printim: r.entry_type === 'printim' ? r.points : 0,
-            total: r.points,
-          })
-        }
-      }
-
-      return Array.from(totals.values())
-    },
+    queryFn: () => apiFetch<LeaderRow[]>(`/api/leaderboard?season_id=${seasonId}`),
     enabled: !!seasonId,
   })
 

@@ -9,7 +9,7 @@ import * as pg from 'pg'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 

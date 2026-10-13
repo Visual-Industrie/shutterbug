@@ -2068,6 +2068,223 @@ app.patch('/api/portal/profile', async (req, res) => {
   }
 })
 
+// ── Admin read routes ──────────────────────────────────────────────────────────
+// The admin UI used to query these tables straight from the browser with the
+// Supabase anon key. Everything goes through here now so the Data API can stay closed.
+
+app.get('/api/health', async (_req, res) => {
+  await getPool().query('SELECT 1')
+  res.json({ ok: true })
+})
+
+// Shaped like the nested selects the pages were written against.
+const COMP_LIST_COLUMNS = `
+  c.id, c.name, c.event_type, c.status, c.opens_at, c.closes_at, c.judging_closes_at,
+  json_build_object('year', s.year) AS seasons,
+  COALESCE((
+    SELECT json_agg(json_build_object('judges', json_build_object('id', j.id, 'name', j.name, 'email', j.email)))
+    FROM competition_judges cj JOIN judges j ON j.id = cj.judge_id
+    WHERE cj.competition_id = c.id
+  ), '[]'::json) AS competition_judges,
+  (SELECT COUNT(*)::int FROM entries e WHERE e.competition_id = c.id AND e.type = 'printim') AS printim_count,
+  (SELECT COUNT(*)::int FROM entries e WHERE e.competition_id = c.id AND e.type = 'projim')  AS projim_count`
+
+app.get('/api/dashboard', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const [comps, counts] = await Promise.all([
+    getPool().query(
+      `SELECT ${COMP_LIST_COLUMNS}
+       FROM competitions c JOIN seasons s ON s.id = c.season_id
+       WHERE s.is_current_event_year
+       ORDER BY c.opens_at ASC`,
+    ),
+    getPool().query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM members WHERE status = 'active') AS current_members,
+         (SELECT COUNT(*)::int FROM members WHERE status = 'active' AND membership_type = 'life') AS life_members,
+         (SELECT COUNT(*)::int FROM admin_users) AS committee_count,
+         (SELECT COUNT(*)::int FROM applicants WHERE status = 'pending') AS pending_applicants,
+         (SELECT COUNT(*)::int FROM judges WHERE is_available) AS judges_available,
+         (SELECT COUNT(DISTINCT member_id)::int FROM entries WHERE submitted_at >= NOW() - INTERVAL '90 days') AS recent_submitters`,
+    ),
+  ])
+  res.json({ comps: comps.rows, counts: counts.rows[0] })
+})
+
+app.get('/api/competitions', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `SELECT ${COMP_LIST_COLUMNS}
+     FROM competitions c JOIN seasons s ON s.id = c.season_id
+     ORDER BY c.opens_at DESC`,
+  )
+  res.json(result.rows)
+})
+
+app.get('/api/competitions/:id', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const [comp, entries] = await Promise.all([
+    getPool().query(
+      `SELECT ${COMP_LIST_COLUMNS},
+              c.description, c.judging_opens_at, c.max_projim_entries, c.max_printim_entries,
+              c.points_honours, c.points_highly_commended, c.points_commended, c.points_accepted
+       FROM competitions c JOIN seasons s ON s.id = c.season_id
+       WHERE c.id = $1`,
+      [req.params.id],
+    ),
+    getPool().query(
+      `SELECT type, award, COUNT(*)::int AS count FROM entries WHERE competition_id = $1 GROUP BY type, award`,
+      [req.params.id],
+    ),
+  ])
+  res.json({ comp: comp.rows[0] ?? null, entries: entries.rows })
+})
+
+const STATUS_FLOW = ['draft', 'open', 'closed', 'judging', 'complete']
+
+app.post('/api/competitions/:id/advance-status', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const current = await getPool().query(`SELECT status FROM competitions WHERE id = $1`, [req.params.id])
+  if (!current.rows.length) return void res.status(404).json({ error: 'Competition not found' })
+  const next = STATUS_FLOW[STATUS_FLOW.indexOf(current.rows[0].status) + 1]
+  if (!next) return void res.status(400).json({ error: 'Competition is already complete' })
+  await getPool().query(
+    `UPDATE competitions SET status = $1, updated_at = NOW() WHERE id = $2 AND status = $3`,
+    [next, req.params.id, current.rows[0].status],
+  )
+  res.json({ status: next })
+})
+
+// Optional filters: ?status=active  ?q=<last name contains>  ?exclude_private=1  ?limit=20
+app.get('/api/members', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { status, q, exclude_private, limit } = req.query as Record<string, string | undefined>
+  const where: string[] = []
+  const params: unknown[] = []
+  if (status) { params.push(status); where.push(`status = $${params.length}`) }
+  if (q) { params.push(`%${q}%`); where.push(`last_name ILIKE $${params.length}`) }
+  if (exclude_private) where.push(`email NOT LIKE '%@privacy.wcc.local'`)
+  let sql = `SELECT id, first_name, last_name, email, phone, address, membership_number, status, membership_type,
+                    subs_paid, subs_due_date::text, joined_date::text, experience_level,
+                    annual_sub_amount::float8, created_at
+             FROM members
+             ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+             ORDER BY last_name, first_name`
+  const max = parseInt(limit ?? '', 10)
+  if (max > 0) { params.push(max); sql += ` LIMIT $${params.length}` }
+  const result = await getPool().query(sql, params)
+  res.json(result.rows)
+})
+
+app.get('/api/members/:id/email-log', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  // Per-member rows only — a group send's summary row has no member.
+  const result = await getPool().query(
+    `SELECT id, type, member_id, recipient_email, recipient_name, subject, body, sent_at, error
+     FROM email_log WHERE member_id = $1 ORDER BY sent_at DESC LIMIT 500`,
+    [req.params.id],
+  )
+  res.json(result.rows)
+})
+
+app.get('/api/competitions/:id/email-log', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  // One row per member: a bulk run's summary row is left out (its
+  // per-member rows carry who was and wasn't reached).
+  const [log, entrants] = await Promise.all([
+    getPool().query(
+      `SELECT id, type, member_id, recipient_email, recipient_name, subject, body, sent_at, error
+       FROM email_log WHERE competition_id = $1 AND recipient_count IS NULL
+       ORDER BY sent_at DESC LIMIT 1000`,
+      [req.params.id],
+    ),
+    getPool().query(`SELECT DISTINCT member_id FROM entries WHERE competition_id = $1`, [req.params.id]),
+  ])
+  res.json({ rows: log.rows, entrantIds: entrants.rows.map(r => r.member_id) })
+})
+
+// Club-wide log: top-level rows, the per-member rows of any bulk runs among
+// them, and the competition names / entrants needed to describe those runs.
+app.get('/api/email-log', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const top = await getPool().query(
+    `SELECT id, type, member_id, competition_id, recipient_email, recipient_name, subject, body, sent_at, error, recipient_count
+     FROM email_log WHERE batch_id IS NULL ORDER BY sent_at DESC LIMIT 300`,
+  )
+  const batchIds = top.rows.filter(r => r.recipient_count != null).map(r => r.id)
+  const compIds = [...new Set(top.rows.map(r => r.competition_id).filter(Boolean))]
+  const [children, comps, entries] = await Promise.all([
+    getPool().query(
+      `SELECT id, batch_id, type, member_id, competition_id, recipient_email, recipient_name, subject, sent_at, error
+       FROM email_log WHERE batch_id = ANY($1::uuid[]) ORDER BY recipient_name`,
+      [batchIds],
+    ),
+    getPool().query(`SELECT id, name FROM competitions WHERE id = ANY($1::uuid[])`, [compIds]),
+    getPool().query(`SELECT DISTINCT member_id, competition_id FROM entries WHERE competition_id = ANY($1::uuid[])`, [compIds]),
+  ])
+  res.json({ rows: top.rows, children: children.rows, competitions: comps.rows, entries: entries.rows })
+})
+
+app.get('/api/email-log/:id/body', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(`SELECT body FROM email_log WHERE id = $1`, [req.params.id])
+  res.json({ body: result.rows[0]?.body ?? null })
+})
+
+app.get('/api/applicants', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `SELECT id, first_name, last_name, email, phone, membership_number, application_date::text,
+            annual_sub_amount::float8, pay_by_date::text, status
+     FROM applicants ORDER BY application_date DESC`,
+  )
+  res.json(result.rows)
+})
+
+app.get('/api/judges', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `SELECT j.id, j.name, j.email, j.bio, j.address, j.rating::float8, j.is_available, j.website, j.facebook, j.instagram,
+            (SELECT COUNT(*)::int FROM competition_judges cj WHERE cj.judge_id = j.id) AS comp_count
+     FROM judges j ORDER BY j.name`,
+  )
+  res.json(result.rows)
+})
+
+app.get('/api/judges/:id/competitions', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `SELECT c.id, c.name, c.opens_at, c.status
+     FROM competition_judges cj JOIN competitions c ON c.id = cj.competition_id
+     WHERE cj.judge_id = $1 ORDER BY c.opens_at DESC NULLS LAST`,
+    [req.params.id],
+  )
+  res.json(result.rows)
+})
+
+app.get('/api/seasons', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(`SELECT id, year, is_current_event_year FROM seasons ORDER BY year DESC`)
+  res.json(result.rows)
+})
+
+app.get('/api/leaderboard', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const seasonId = req.query.season_id as string | undefined
+  if (!seasonId) return void res.status(400).json({ error: 'season_id is required' })
+  const result = await getPool().query(
+    `SELECT mp.member_id, m.first_name || ' ' || m.last_name AS name,
+            COALESCE(SUM(mp.points) FILTER (WHERE mp.entry_type = 'projim'), 0)::int  AS projim,
+            COALESCE(SUM(mp.points) FILTER (WHERE mp.entry_type = 'printim'), 0)::int AS printim,
+            SUM(mp.points)::int AS total
+     FROM member_points mp JOIN members m ON m.id = mp.member_id
+     WHERE mp.season_id = $1
+     GROUP BY mp.member_id, m.first_name, m.last_name`,
+    [seasonId],
+  )
+  res.json(result.rows)
+})
+
 // Global error handler — catches any uncaught async throws from route handlers
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled route error', err)

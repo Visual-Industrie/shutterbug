@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { apiFetch } from '@/lib/api'
 import {
   EMAIL_TYPE_LABELS,
   EmailRowItem,
@@ -62,70 +62,41 @@ export default function EmailActivityList() {
   const [search, setSearch] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
 
-  // Top-level rows only: a bulk run's per-member rows hang off its summary row
-  // via batch_id and are loaded separately.
-  const { data: topRows = [], isLoading } = useQuery({
+  // Top-level rows, the per-member rows of any bulk runs among them (linked
+  // to their summary row via batch_id), and the competition names / entrants
+  // needed to infer who older, un-grouped competition sends missed.
+  const { data: log, isLoading } = useQuery({
     queryKey: ['emails'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('email_log')
-        .select('id,type,member_id,competition_id,recipient_email,recipient_name,subject,body,sent_at,error,recipient_count')
-        .is('batch_id', null)
-        .order('sent_at', { ascending: false })
-        .limit(300)
-      if (error) throw error
-      return (data ?? []) as LogRow[]
-    },
-  })
-
-  const batchIds = topRows.filter(r => r.recipient_count != null).map(r => r.id)
-
-  const { data: children = [] } = useQuery({
-    queryKey: ['email-batch-members', batchIds],
-    enabled: batchIds.length > 0,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('email_log')
-        .select('id,batch_id,type,member_id,competition_id,recipient_email,recipient_name,subject,sent_at,error')
-        .in('batch_id', batchIds)
-        .order('recipient_name')
-      if (error) throw error
-      return (data ?? []) as (LogRow & { batch_id: string })[]
-    },
-  })
-
-  const compIds = [...new Set(topRows.map(r => r.competition_id).filter((id): id is string => !!id))]
-
-  // Names for group titles, plus what's needed to infer who older,
-  // un-grouped competition sends missed.
-  const { data: context } = useQuery({
-    queryKey: ['email-log-context', compIds],
-    queryFn: async () => {
-      const [comps, members, entries] = await Promise.all([
-        compIds.length
-          ? supabase.from('competitions').select('id,name').in('id', compIds)
-          : Promise.resolve({ data: [], error: null }),
-        supabase.from('members').select('id,first_name,last_name,status,email,created_at').order('last_name').order('first_name'),
-        compIds.length
-          ? supabase.from('entries').select('member_id,competition_id').in('competition_id', compIds)
-          : Promise.resolve({ data: [], error: null }),
-      ])
-      if (comps.error) throw comps.error
-      if (members.error) throw members.error
-      if (entries.error) throw entries.error
+      const data = await apiFetch<{
+        rows: LogRow[]
+        children: (LogRow & { batch_id: string })[]
+        competitions: { id: string; name: string }[]
+        entries: { member_id: string; competition_id: string }[]
+      }>('/api/email-log')
       const entrants = new Map<string, Set<string>>()
-      for (const e of (entries.data ?? []) as { member_id: string; competition_id: string }[]) {
+      for (const e of data.entries) {
         const set = entrants.get(e.competition_id) ?? new Set<string>()
         set.add(e.member_id)
         entrants.set(e.competition_id, set)
       }
       return {
-        compNames: new Map(((comps.data ?? []) as { id: string; name: string }[]).map(c => [c.id, c.name])),
-        members: (members.data ?? []) as MemberLite[],
+        rows: data.rows,
+        children: data.children,
+        compNames: new Map(data.competitions.map(c => [c.id, c.name])),
         entrants,
       }
     },
   })
+
+  const { data: members } = useQuery({
+    queryKey: ['email-log-members'],
+    queryFn: () => apiFetch<MemberLite[]>('/api/members'),
+  })
+
+  const topRows = log?.rows ?? []
+  const children = log?.children ?? []
+  const context = log && members ? { compNames: log.compNames, members, entrants: log.entrants } : undefined
 
   const items = buildItems(topRows, children, context)
 

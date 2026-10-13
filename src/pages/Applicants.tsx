@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
 import { apiFetch } from '@/lib/api'
 
 interface Applicant {
@@ -48,13 +47,7 @@ export default function Applicants() {
 
   const { data: applicants = [], isLoading } = useQuery({
     queryKey: ['applicants'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('applicants')
-        .select('id,first_name,last_name,email,phone,membership_number,application_date,annual_sub_amount,pay_by_date,status')
-        .order('application_date', { ascending: false })
-      return data ?? []
-    },
+    queryFn: () => apiFetch<Applicant[]>('/api/applicants'),
   })
 
   const recordPaymentMutation = useMutation({

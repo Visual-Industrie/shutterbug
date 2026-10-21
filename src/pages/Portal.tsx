@@ -83,16 +83,15 @@ export default function Portal() {
           <div className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
             Wairarapa Camera Club
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900">My membership</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
             {member.firstName} {member.lastName}
-          </h1>
-          {member.membershipNumber && (
-            <p className="text-sm text-gray-400 mt-0.5">Member #{member.membershipNumber}</p>
-          )}
+            {member.membershipNumber && <span className="text-gray-400"> · Member #{member.membershipNumber}</span>}
+          </p>
 
           {/* Tabs */}
           <nav className="flex gap-6 mt-5 -mb-px">
-            {([['competitions', 'Competitions'], ['profile', 'My Profile']] as const).map(([key, label]) => (
+            {([['competitions', 'My entries'], ['profile', 'My details']] as const).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
@@ -111,7 +110,7 @@ export default function Portal() {
 
       <div className="max-w-3xl mx-auto px-6 py-8">
         {tab === 'competitions' && <CompetitionsTab />}
-        {tab === 'profile' && <PortalProfileForm member={member} onUpdated={setMember} />}
+        {tab === 'profile' && <PortalProfileForm onUpdated={setMember} />}
       </div>
     </div>
   )

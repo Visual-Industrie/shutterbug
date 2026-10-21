@@ -139,6 +139,14 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 
 ---
 
+### Applicant → Member Profile Fields & Member Self-Edit
+- Every `/join` field now survives conversion: `record-payment` copies address, landline, experience level, photographic interests, software, payment method and both consents (with their `*_consented_at` timestamps) to the new member, field by field. Application-only fields (`hear_about_us`, `known_members`, `pay_by_date`) stay on the applicant
+- One field list for the personal details: `src/shared/memberProfile.ts` (`memberProfileSchema` zod schema, `MemberProfileFields` type, form helpers); SQL helpers in `api/_lib/member-profile.ts`. Strings are trimmed and blanks stored as NULL
+- Consents: `*_consented_at` is stamped when a consent is given and cleared when withdrawn; existing rows left NULL (date unknown)
+- Admin Applicants and Members slide-overs share `<MemberProfileFields>` (Address / Photography / Consents sections); applicant cards show address and experience
+- Member portal (`/portal/:token`, legacy `/history/:token` redirects): heading "My membership", tabs **My entries** / **My details**. My details shows membership number, type and status read-only and edits personal details via `GET|PATCH /api/portal/profile`. Admin-only fields are stripped server-side; email clashes return 409 inline; an email change sends a `member_details_changed` notice to the old address (logged in `email_log`)
+- `facebook_invite` removed (the form never asked it). `club_rules_ok` still hard-coded true on application — to be revisited
+
 ### Judge Availability Round
 - Annual request to every judge on the list (`/judges/availability`, linked from the Judges page as "Request availability"); super_admin / competition_secretary can send
 - Lists the chosen season's competitions with **no judge assigned**, with entries-close and judging / club night dates; each judge gets a personal link (`judge_availability` token, per judge per season, expires at the response deadline — end of that day NZ time)
@@ -163,6 +171,9 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | … | Later migrations — see `supabase/migrations/` |
 | `20261021000000_judge_availability_enums.sql` | `judge_availability` token type + 4 email types |
 | `20261021000001_judge_availability.sql` | Judge archive columns, `tokens.season_id`, availability responses + preferences tables, email templates |
+| `20261021000002_member_details_changed_email_type.sql` | `member_details_changed` email type |
+| `20261021000003_applicant_member_profile_fields.sql` | `applicants.experience_level` → enum; consent timestamps on both tables; landline / interests / software on members; member portal link email copy |
+| `20261021000004_drop_applicants_facebook_invite.sql` | **Destructive — SKIPPED in prod** (2026-10-21; applied locally only). Drops `applicants.facebook_invite` (always false). Don't push |
 
 ---
 
@@ -187,7 +198,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `/submit/:token` | Token-gated | Member entry submission portal |
 | `/judge/:token` | Token-gated | Judge scoring portal |
 | `/judge-availability/:token` | Token-gated | Judge availability response |
-| `/history/:token` | Token-gated | Member competition history |
+| `/portal/:token` | Token-gated | Member portal — My entries (history, submissions) and My details (`/history/:token` redirects here) |
 | `/` | Admin | Dashboard |
 | `/members` | Admin | Member management |
 | `/applicants` | Admin | Applicant management |

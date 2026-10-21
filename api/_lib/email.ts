@@ -669,19 +669,34 @@ export async function memberHistoryEmail(opts: {
   if (tmpl) {
     const vars = {
       member_name: opts.memberName,
-      history_link: makeButton(link, 'View my photo history'),
+      history_link: makeButton(link, 'Open my membership page'),
       history_url: link,
     }
     return { subject: applyTemplate(tmpl.subject_template, vars), html: applyTemplate(tmpl.body_html, vars) }
   }
 
-  const subject = `Your Wairarapa Camera Club photo history`
+  const subject = `Your Wairarapa Camera Club membership`
   const html = `
-<p>Hi ${opts.memberName},</p>
-<p>Here's your personal link to view all your competition entries and scores.</p>
-<p>${makeButton(link, 'View my photo history')}</p>
+<p>Hi ${htmlEsc(opts.memberName)},</p>
+<p>Here's your personal link to your membership page. You can view all your competition entries and scores, and keep your contact details up to date.</p>
+<p>${makeButton(link, 'Open my membership page')}</p>
 <p>Or copy this link: ${link}</p>
 <p>This link is unique to you — please don't share it.</p>
+<p>—<br>Wairarapa Camera Club</p>
+`
+  return { subject, html }
+}
+
+/** Sent to a member's OLD address after they change their email in the portal. */
+export async function memberDetailsChangedEmail(opts: {
+  firstName: string
+  newEmail: string
+}): Promise<{ subject: string; html: string }> {
+  const subject = `Your Wairarapa Camera Club email address was changed`
+  const html = `
+<p>Hi ${htmlEsc(opts.firstName)},</p>
+<p>The email address on your club membership was just changed to <strong>${htmlEsc(opts.newEmail)}</strong>. Club emails will go there from now on.</p>
+<p>If you made this change, there's nothing more to do. If you didn't, please contact the club straight away.</p>
 <p>—<br>Wairarapa Camera Club</p>
 `
   return { subject, html }

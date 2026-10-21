@@ -85,6 +85,7 @@ export default function Competitions() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
+  const [season, setSeason] = useState('all')
 
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<AddForm>(EMPTY_FORM)
@@ -116,7 +117,12 @@ export default function Competitions() {
     queryFn: () => apiFetch<Competition[]>('/api/competitions'),
   })
 
+  // Only seasons that have events loaded against them, newest first.
+  const seasonYears = [...new Set(allComps.map(c => c.seasons?.year).filter((y): y is number => y != null))]
+    .sort((a, b) => b - a)
+
   const comps = allComps.filter(c => {
+    if (season !== 'all' && String(c.seasons?.year) !== season) return false
     if (status !== 'all' && c.status !== status) return false
     if (type !== 'all' && c.event_type !== type) return false
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
@@ -228,6 +234,14 @@ export default function Competitions() {
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
         >
           {TYPE_OPTS.map(o => <option key={o} value={o}>{o === 'all' ? 'All types' : o}</option>)}
+        </select>
+        <select
+          value={season}
+          onChange={e => setSeason(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="all">All seasons</option>
+          {seasonYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
         </select>
       </div>
 

@@ -207,9 +207,9 @@ async function startBulkRun(opts: {
 
   if (total > 0) {
     await pool.query(
-      `INSERT INTO email_log (id, type, recipient_email, recipient_name, member_id, competition_id, subject, error, batch_id)
-       SELECT t.id, $1, t.email, t.name, t.member_id, $2, $3, $4, $5
-       FROM unnest($6::uuid[], $7::text[], $8::text[], $9::uuid[]) AS t(id, email, name, member_id)`,
+      `INSERT INTO email_log (id, type, recipient_email, recipient_name, member_id, judge_id, competition_id, subject, error, batch_id)
+       SELECT t.id, $1, t.email, t.name, t.member_id, t.judge_id, $2, $3, $4, $5
+       FROM unnest($6::uuid[], $7::text[], $8::text[], $9::uuid[], $10::uuid[]) AS t(id, email, name, member_id, judge_id)`,
       [
         opts.type,
         opts.competitionId ?? null,
@@ -220,6 +220,7 @@ async function startBulkRun(opts: {
         opts.recipients.map(r => r.email),
         opts.recipients.map(r => r.name ?? null),
         opts.recipients.map(r => r.id ?? null),
+        opts.recipients.map(r => r.judgeId ?? null),
       ],
     )
   }
@@ -313,10 +314,74 @@ export async function sendPersonalisedRun(opts: {
   return { sent, skipped, errors }
 }
 
+export interface RunJudge {
+  id: string
+  name: string
+  email: string
+}
+
+/**
+ * Judge equivalent of sendPersonalisedRun: one personalised email per judge,
+ * logged as a single bulk run (summary row + a child row per judge, linked
+ * by judge_id rather than member_id).
+ */
+export async function sendPersonalisedJudgeRun(opts: {
+  type: string
+  /** Summary title for the log, e.g. "Judge availability — 2027". */
+  subject: string
+  judges: RunJudge[]
+  build: (j: RunJudge) => Promise<{ subject: string; html: string; tokenId?: string | null }>
+}): Promise<RunResult> {
+  let sent = 0, skipped = 0
+  const errors: string[] = []
+  if (opts.judges.length === 0) return { sent, skipped, errors }
+
+  const { batchId, logIds } = await startBulkRun({
+    type: opts.type,
+    subject: opts.subject,
+    recipients: opts.judges.map(j => ({ judgeId: j.id, email: j.email, name: j.name })),
+  })
+
+  await withSendCache(async () => {
+    for (const [i, j] of opts.judges.entries()) {
+      try {
+        const { subject, html, tokenId } = await opts.build(j)
+        const error = await sendEmail({
+          type: opts.type,
+          to: j.email,
+          toName: j.name,
+          subject,
+          html,
+          judgeId: j.id,
+          tokenId,
+          logId: logIds[i],
+        })
+        if (error) {
+          errors.push(`${j.email}: ${error}`)
+          skipped++
+        } else {
+          sent++
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${j.email}: ${msg}`)
+        skipped++
+        await markLogFailed(logIds[i], msg).catch(() => {})
+      }
+    }
+  })
+
+  await finishBulkRun(batchId, opts.judges.length, skipped, errors.map(e => e.slice(e.indexOf(': ') + 2)))
+  return { sent, skipped, errors }
+}
+
 // ─── Bulk send ────────────────────────────────────────────────────────────────
 
 export interface BulkRecipient {
+  /** Member id (email_log.member_id). */
   id?: string | null
+  /** Judge id (email_log.judge_id), for runs sent to judges rather than members. */
+  judgeId?: string | null
   email: string
   name?: string | null
 }
@@ -430,9 +495,10 @@ const HTML_RAW_KEYS = new Set([
   'submission_link', 'judging_link', 'history_link', 'review_link',
   'results_table', 'entry_summary', 'submitted_entries',
   'competition_description', 'judged_by_line',
+  'competition_list', 'response_link', 'response_summary', 'judges_link',
 ])
 
-function htmlEsc(s: string): string {
+export function htmlEsc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
@@ -463,7 +529,7 @@ async function loadEmailTemplate(
   }
 }
 
-function makeButton(href: string, label: string): string {
+export function makeButton(href: string, label: string): string {
   return `<a href="${href}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">${label}</a>`
 }
 

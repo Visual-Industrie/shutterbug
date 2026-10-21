@@ -632,9 +632,89 @@ export type Database = {
         }
         Relationships: []
       }
+      judge_availability_responses: {
+        Row: {
+          id: string
+          judge_id: string
+          responded_at: string
+          response: Database["public"]["Enums"]["judge_availability_response"]
+          season_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          judge_id: string
+          responded_at?: string
+          response: Database["public"]["Enums"]["judge_availability_response"]
+          season_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          judge_id?: string
+          responded_at?: string
+          response?: Database["public"]["Enums"]["judge_availability_response"]
+          season_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "judge_availability_responses_judge_id_fkey"
+            columns: ["judge_id"]
+            isOneToOne: false
+            referencedRelation: "judges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "judge_availability_responses_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      judge_competition_preferences: {
+        Row: {
+          competition_id: string
+          id: string
+          rank: number
+          response_id: string
+        }
+        Insert: {
+          competition_id: string
+          id?: string
+          rank: number
+          response_id: string
+        }
+        Update: {
+          competition_id?: string
+          id?: string
+          rank?: number
+          response_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "judge_competition_preferences_competition_id_fkey"
+            columns: ["competition_id"]
+            isOneToOne: false
+            referencedRelation: "competitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "judge_competition_preferences_response_id_fkey"
+            columns: ["response_id"]
+            isOneToOne: false
+            referencedRelation: "judge_availability_responses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       judges: {
         Row: {
           address: string | null
+          archived_at: string | null
+          archived_reason: string | null
           bio: string | null
           created_at: string
           email: string
@@ -649,6 +729,8 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archived_at?: string | null
+          archived_reason?: string | null
           bio?: string | null
           created_at?: string
           email: string
@@ -663,6 +745,8 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archived_at?: string | null
+          archived_reason?: string | null
           bio?: string | null
           created_at?: string
           email?: string
@@ -943,6 +1027,7 @@ export type Database = {
           judge_id: string | null
           member_id: string | null
           revoked_at: string | null
+          season_id: string | null
           token: string
           type: Database["public"]["Enums"]["token_type"]
           used_at: string | null
@@ -955,6 +1040,7 @@ export type Database = {
           judge_id?: string | null
           member_id?: string | null
           revoked_at?: string | null
+          season_id?: string | null
           token?: string
           type: Database["public"]["Enums"]["token_type"]
           used_at?: string | null
@@ -967,6 +1053,7 @@ export type Database = {
           judge_id?: string | null
           member_id?: string | null
           revoked_at?: string | null
+          season_id?: string | null
           token?: string
           type?: Database["public"]["Enums"]["token_type"]
           used_at?: string | null
@@ -991,6 +1078,13 @@ export type Database = {
             columns: ["member_id"]
             isOneToOne: false
             referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokens_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
             referencedColumns: ["id"]
           },
         ]
@@ -1029,11 +1123,20 @@ export type Database = {
         | "deadline_reminder"
         | "new_application"
         | "application_received"
+        | "judge_availability_invite"
+        | "judge_availability_reminder"
+        | "judge_availability_confirmation"
+        | "judge_availability_admin_notice"
       entry_type: "projim" | "printim"
       event_type: "competition" | "award" | "other"
       experience_level: "beginner" | "intermediate" | "advanced"
+      judge_availability_response: "keen" | "not_this_year" | "remove"
       membership_type: "full" | "life" | "complimentary"
-      token_type: "submission" | "judging" | "member_history"
+      token_type:
+        | "submission"
+        | "judging"
+        | "member_history"
+        | "judge_availability"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1192,12 +1295,22 @@ export const Constants = {
         "deadline_reminder",
         "new_application",
         "application_received",
+        "judge_availability_invite",
+        "judge_availability_reminder",
+        "judge_availability_confirmation",
+        "judge_availability_admin_notice",
       ],
       entry_type: ["projim", "printim"],
       event_type: ["competition", "award", "other"],
       experience_level: ["beginner", "intermediate", "advanced"],
+      judge_availability_response: ["keen", "not_this_year", "remove"],
       membership_type: ["full", "life", "complimentary"],
-      token_type: ["submission", "judging", "member_history"],
+      token_type: [
+        "submission",
+        "judging",
+        "member_history",
+        "judge_availability",
+      ],
     },
   },
 } as const

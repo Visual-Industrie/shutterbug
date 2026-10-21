@@ -24,6 +24,8 @@ import CompetitionDetail from '@/pages/CompetitionDetail'
 import Submit from '@/pages/Submit'
 import Judge from '@/pages/Judge'
 import JudgeReference from '@/pages/JudgeReference'
+import JudgeAvailability from '@/pages/JudgeAvailability'
+import JudgeAvailabilityAdmin from '@/pages/JudgeAvailabilityAdmin'
 import WebsiteReport from '@/pages/WebsiteReport'
 import Portal from '@/pages/Portal'
 import Join from '@/pages/Join'
@@ -52,6 +54,7 @@ export default function App() {
           <Route path="/submit/:token" element={<Submit />} />
           <Route path="/judge/:token" element={<Judge />} />
           <Route path="/judge/:token/reference" element={<JudgeReference />} />
+          <Route path="/judge-availability/:token" element={<JudgeAvailability />} />
 
           {/* Member self-service portal */}
           <Route path="/portal/:token" element={<Portal />} />
@@ -77,6 +80,7 @@ export default function App() {
             <Route path="/competitions" element={<Competitions />} />
             <Route path="/competitions/:id" element={<CompetitionDetail />} />
             <Route path="/judges" element={<Judges />} />
+            <Route path="/judges/availability" element={<JudgeAvailabilityAdmin />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/email" element={<EmailLog />} />
             <Route path="/profile" element={<Profile />} />

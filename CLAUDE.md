@@ -63,8 +63,8 @@ supabase/
 
 ### Access Model
 - **Members and judges have no logins** — all access is via tokenised UUIDs sent by email.
-- Token types: `submission` (per member, per competition), `judging` (per judge, per competition), `member_history` (per member, permanent).
-- Routes: `/submit/[token]`, `/judge/[token]`, `/history/[token]`
+- Token types: `submission` (per member, per competition), `judging` (per judge, per competition), `member_history` (per member, permanent), `judge_availability` (per judge, per season — expires at the response deadline).
+- Routes: `/submit/[token]`, `/judge/[token]`, `/history/[token]`, `/judge-availability/[token]`
 - Token validation on every request must check: `revoked_at IS NULL AND expires_at > NOW()`
 
 ### Admin Roles

@@ -14,6 +14,8 @@ interface Judge {
   website: string | null
   facebook: string | null
   instagram: string | null
+  archived_at: string | null
+  archived_reason: string | null
   comp_count: number
 }
 
@@ -139,6 +141,7 @@ export default function Judges() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [onlyAvailable, setOnlyAvailable] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   // Edit sidebar
   const [editing, setEditing] = useState<Judge | null>(null)
@@ -152,8 +155,17 @@ export default function Judges() {
   const [viewLoading, setViewLoading] = useState(false)
 
   const { data: allJudges = [], isLoading } = useQuery<Judge[]>({
-    queryKey: ['judges'],
-    queryFn: () => apiFetch<Judge[]>('/api/judges'),
+    queryKey: ['judges', { archived: showArchived }],
+    queryFn: () => apiFetch<Judge[]>(`/api/judges${showArchived ? '?includeArchived=true' : ''}`),
+  })
+
+  const archiveMutation = useMutation({
+    mutationFn: ({ id, archive }: { id: string; archive: boolean }) =>
+      apiFetch(`/api/judges/${id}/${archive ? 'archive' : 'unarchive'}`, { method: 'POST', body: '{}' }),
+    onSuccess: () => {
+      setViewing(null)
+      queryClient.invalidateQueries({ queryKey: ['judges'] })
+    },
   })
 
   const judges = allJudges.filter(j => {
@@ -226,12 +238,20 @@ export default function Judges() {
           <h1 className="text-2xl font-bold text-gray-900">Judges</h1>
           <p className="text-sm text-gray-500 mt-0.5">{judges.length} shown</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
-        >
-          + Add judge
-        </button>
+        <div className="flex gap-2">
+          <Link
+            to="/judges/availability"
+            className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Request availability
+          </Link>
+          <button
+            onClick={openAdd}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            + Add judge
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 mb-5">
@@ -246,6 +266,10 @@ export default function Judges() {
           <input type="checkbox" checked={onlyAvailable} onChange={e => setOnlyAvailable(e.target.checked)} className="accent-amber-600" />
           Available only
         </label>
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="accent-amber-600" />
+          Show archived
+        </label>
       </div>
 
       {isLoading ? (
@@ -259,15 +283,19 @@ export default function Judges() {
             <div
               key={j.id}
               onClick={() => openView(j)}
-              className="bg-white rounded-xl border border-gray-200 p-4 group cursor-pointer hover:border-amber-200 hover:shadow-sm transition-all"
+              className={`bg-white rounded-xl border border-gray-200 p-4 group cursor-pointer hover:border-amber-200 hover:shadow-sm transition-all ${j.archived_at ? 'opacity-60' : ''}`}
             >
               {/* Header row */}
               <div className="flex items-start justify-between mb-2">
                 <div className="font-medium text-gray-900">{j.name}</div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${j.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {j.is_available ? 'Available' : 'Unavailable'}
-                  </span>
+                  {j.archived_at ? (
+                    <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-50 text-red-600">Archived</span>
+                  ) : (
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${j.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {j.is_available ? 'Available' : 'Unavailable'}
+                    </span>
+                  )}
                   <button
                     onClick={e => { e.stopPropagation(); openEdit(j) }}
                     className="text-xs px-2 py-0.5 rounded border border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors opacity-0 group-hover:opacity-100"
@@ -326,6 +354,22 @@ export default function Judges() {
 
             {/* Modal body */}
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+              {viewing.archived_at && (
+                <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5">
+                  <div className="text-sm text-red-700">
+                    Archived {fmt(viewing.archived_at)}
+                    {viewing.archived_reason && <div className="text-xs text-red-500 mt-0.5">{viewing.archived_reason}</div>}
+                  </div>
+                  <button
+                    onClick={() => archiveMutation.mutate({ id: viewing.id, archive: false })}
+                    disabled={archiveMutation.isPending}
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-white disabled:opacity-50"
+                  >
+                    Unarchive
+                  </button>
+                </div>
+              )}
 
               {/* Contact */}
               <div className="space-y-1">
@@ -391,6 +435,22 @@ export default function Judges() {
                   </div>
                 )}
               </div>
+
+              {!viewing.archived_at && (
+                <div className="pt-3 border-t border-gray-100">
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Archive ${viewing.name}? They'll be hidden from the judges list and won't receive availability requests. Their judging history is kept.`)) {
+                        archiveMutation.mutate({ id: viewing.id, archive: true })
+                      }
+                    }}
+                    disabled={archiveMutation.isPending}
+                    className="text-xs text-gray-400 hover:text-red-600 disabled:opacity-50"
+                  >
+                    Archive judge…
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

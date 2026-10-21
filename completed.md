@@ -139,6 +139,17 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 
 ---
 
+### Judge Availability Round
+- Annual request to every judge on the list (`/judges/availability`, linked from the Judges page as "Request availability"); super_admin / competition_secretary can send
+- Lists the chosen season's competitions with **no judge assigned**, with entries-close and judging / club night dates; each judge gets a personal link (`judge_availability` token, per judge per season, expires at the response deadline — end of that day NZ time)
+- Judge page `/judge-availability/:token` (mobile-first): three options — keen to judge (tick competitions, then rank them by drag-and-drop via dnd-kit or ↑/↓ buttons), not this year, remove me. Editable until the deadline, read-only after
+- "Not this year" / "keen" set the judge to Available (and un-archive); "remove me" **archives** the judge (`judges.archived_at`) — never deleted. Admins are emailed when a judge removes themselves
+- Admin page: send (with deadline; pick recipients from a checklist of non-archived judges — all ticked by default, Select all / none; a second send needs confirming), remind non-responders, edit deadline, per-judge resend / copy link; "By competition" view with interested judges by rank and one-click Assign; "By judge" table filterable by response
+- Bulk invite / reminder logged as one bulk run (summary + per-judge child rows via `email_log.judge_id`); confirmations and admin notices logged individually. All four emails are editable templates
+- Archived judges hidden from the Judges list (toggle "Show archived"), the assignment dropdown and the dashboard count; Archive / Unarchive in the judge view
+- Logic in `api/_lib/judge-availability.ts`; shared types in `src/types/judge-availability.ts`
+- Routes: `GET /api/judge-availability/:seasonId`, `POST …/send` (body `{ deadline, judgeIds, force? }`), `POST …/remind`, `PATCH …/deadline`, `POST …/judges/:judgeId/resend`, `GET|PUT /api/public/judge-availability/:token`, `POST /api/judges/:id/archive|unarchive`
+
 ## Database Migrations (in order)
 
 | File | Description |
@@ -149,6 +160,9 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `20260317000002_committee.sql` | Add committee_roles and committee_members tables |
 | `20260317000003_admin_invite.sql` | Add invite flow columns to admin_users |
 | `20260318000000_email_templates.sql` | Add email_templates table seeded with defaults |
+| … | Later migrations — see `supabase/migrations/` |
+| `20261021000000_judge_availability_enums.sql` | `judge_availability` token type + 4 email types |
+| `20261021000001_judge_availability.sql` | Judge archive columns, `tokens.season_id`, availability responses + preferences tables, email templates |
 
 ---
 
@@ -172,6 +186,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `/set-password` | Public | Activate admin account from invite |
 | `/submit/:token` | Token-gated | Member entry submission portal |
 | `/judge/:token` | Token-gated | Judge scoring portal |
+| `/judge-availability/:token` | Token-gated | Judge availability response |
 | `/history/:token` | Token-gated | Member competition history |
 | `/` | Admin | Dashboard |
 | `/members` | Admin | Member management |
@@ -179,6 +194,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `/competitions` | Admin | Events list |
 | `/competitions/:id` | Admin | Event detail & management |
 | `/judges` | Admin | Judge management |
+| `/judges/availability` | Admin | Judge availability round |
 | `/leaderboard` | Admin | Season points leaderboard |
 | `/email` | Admin | Email log, compose, and template editor |
 | `/profile` | Admin | Change password |

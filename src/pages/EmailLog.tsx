@@ -72,6 +72,41 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
   subs_reminder_second: [
     { key: '[member_name]', description: 'Full name of the member' },
     { key: '[amount]', description: 'Subscription amount (e.g. "$85.00") or "your annual subscription"' },
+  ],  judge_availability_invite: [
+    { key: '[first_name]', description: 'Judge\'s first name' },
+    { key: '[judge_name]', description: 'Judge\'s full name' },
+    { key: '[season_year]', description: 'Season, e.g. "2027"' },
+    { key: '[current_status]', description: '"Available" or "Unavailable"' },
+    { key: '[deadline_date]', description: 'Response deadline (e.g. "Fri 14 Nov 2026")' },
+    { key: '[competition_list]', description: 'Competitions needing a judge, with entries-close and judging dates' },
+    { key: '[response_link]', description: 'Button: "Respond here"' },
+    { key: '[response_url]', description: 'Plain text response URL' },
+  ],
+  judge_availability_reminder: [
+    { key: '[first_name]', description: 'Judge\'s first name' },
+    { key: '[judge_name]', description: 'Judge\'s full name' },
+    { key: '[season_year]', description: 'Season, e.g. "2027"' },
+    { key: '[current_status]', description: '"Available" or "Unavailable"' },
+    { key: '[deadline_date]', description: 'Response deadline (e.g. "Fri 14 Nov 2026")' },
+    { key: '[competition_list]', description: 'Competitions needing a judge, with entries-close and judging dates' },
+    { key: '[response_link]', description: 'Button: "Respond here"' },
+    { key: '[response_url]', description: 'Plain text response URL' },
+  ],
+  judge_availability_confirmation: [
+    { key: '[first_name]', description: 'Judge\'s first name' },
+    { key: '[judge_name]', description: 'Judge\'s full name' },
+    { key: '[season_year]', description: 'Season, e.g. "2027"' },
+    { key: '[deadline_date]', description: 'Response deadline' },
+    { key: '[response_summary]', description: 'What they chose, incl. their ranked competitions' },
+    { key: '[response_link]', description: 'Button: "Update my response"' },
+    { key: '[response_url]', description: 'Plain text response URL' },
+  ],
+  judge_availability_admin_notice: [
+    { key: '[judge_name]', description: 'Judge\'s full name' },
+    { key: '[judge_email]', description: 'Judge\'s email' },
+    { key: '[season_year]', description: 'Season, e.g. "2027"' },
+    { key: '[deadline_date]', description: 'Response deadline' },
+    { key: '[judges_link]', description: 'Button: "Open Judges"' },
   ],
 }
 

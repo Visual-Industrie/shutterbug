@@ -14,6 +14,10 @@ export const EMAIL_TYPE_LABELS: Record<string, string> = {
   one_off: 'One-off',
   new_application: 'New application',
   application_received: 'Application received',
+  judge_availability_invite: 'Judge availability request',
+  judge_availability_reminder: 'Judge availability reminder',
+  judge_availability_confirmation: 'Judge availability response',
+  judge_availability_admin_notice: 'Judge removed (admin notice)',
 }
 
 // Competition emails that go to every active member, so anyone active (and

@@ -24,7 +24,8 @@ export const eventTypeEnum = pgEnum('event_type', ['competition', 'award', 'othe
 export const entryTypeEnum = pgEnum('entry_type', ['projim', 'printim'])
 // not_placed is implicit (NULL award); winner/shortlisted for non-points events
 export const awardLevelEnum = pgEnum('award_level', ['honours', 'highly_commended', 'commended', 'accepted', 'winner', 'shortlisted'])
-export const tokenTypeEnum = pgEnum('token_type', ['submission', 'judging', 'member_history'])
+export const tokenTypeEnum = pgEnum('token_type', ['submission', 'judging', 'member_history', 'judge_availability'])
+export const judgeAvailabilityResponseEnum = pgEnum('judge_availability_response', ['keen', 'not_this_year', 'remove'])
 export const adminRoleEnum = pgEnum('admin_role', ['president', 'competition_secretary', 'treasurer', 'committee', 'super_admin'])
 export const emailTypeEnum = pgEnum('email_type', [
   'submission_invite',
@@ -38,6 +39,10 @@ export const emailTypeEnum = pgEnum('email_type', [
   'deadline_reminder',
   'new_application',
   'application_received',
+  'judge_availability_invite',
+  'judge_availability_reminder',
+  'judge_availability_confirmation',
+  'judge_availability_admin_notice',
 ])
 
 // ─── Members ──────────────────────────────────────────────────────────────────
@@ -141,6 +146,9 @@ export const judges = pgTable('judges', {
   website: text('website'),
   facebook: text('facebook'),
   instagram: text('instagram'),
+  // Archived judges are hidden from lists and sends; never hard-deleted (entries.judged_by).
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  archivedReason: text('archived_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -161,6 +169,7 @@ export const tokens = pgTable('tokens', {
   memberId: uuid('member_id').references(() => members.id),
   judgeId: uuid('judge_id').references(() => judges.id),
   competitionId: uuid('competition_id').references(() => competitions.id),
+  seasonId: uuid('season_id').references(() => seasons.id), // judge_availability tokens
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   usedAt: timestamp('used_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -172,8 +181,33 @@ export const tokens = pgTable('tokens', {
   check('token_has_valid_owner', sql`
     (type = 'submission' AND member_id IS NOT NULL AND competition_id IS NOT NULL) OR
     (type = 'judging'    AND judge_id  IS NOT NULL AND competition_id IS NOT NULL) OR
-    (type = 'member_history' AND member_id IS NOT NULL)
+    (type = 'member_history' AND member_id IS NOT NULL) OR
+    (type = 'judge_availability' AND judge_id IS NOT NULL AND season_id IS NOT NULL)
   `),
+])
+
+// ─── Judge availability round ─────────────────────────────────────────────────
+
+export const judgeAvailabilityResponses = pgTable('judge_availability_responses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  judgeId: uuid('judge_id').notNull().references(() => judges.id),
+  seasonId: uuid('season_id').notNull().references(() => seasons.id),
+  response: judgeAvailabilityResponseEnum('response').notNull(),
+  respondedAt: timestamp('responded_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique().on(t.judgeId, t.seasonId),
+])
+
+export const judgeCompetitionPreferences = pgTable('judge_competition_preferences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  responseId: uuid('response_id').notNull().references(() => judgeAvailabilityResponses.id, { onDelete: 'cascade' }),
+  competitionId: uuid('competition_id').notNull().references(() => competitions.id, { onDelete: 'cascade' }),
+  rank: integer('rank').notNull(), // 1 = first choice
+}, (t) => [
+  unique().on(t.responseId, t.competitionId),
+  unique().on(t.responseId, t.rank),
+  index('idx_jcp_competition').on(t.competitionId),
 ])
 
 // ─── Entries ──────────────────────────────────────────────────────────────────

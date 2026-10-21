@@ -30,6 +30,16 @@ import { parseUpload } from './_lib/parse-upload.js'
 import { getPool } from './_lib/db.js'
 import { upsertSubmissionToken } from './_lib/tokens.js'
 import {
+  AvailabilityError,
+  getAvailabilityOverview,
+  getAvailabilityPageData,
+  saveAvailabilityResponse,
+  sendAvailabilityInvites,
+  sendAvailabilityReminders,
+  resendAvailabilityInvite,
+  updateAvailabilityDeadline,
+} from './_lib/judge-availability.js'
+import {
   getPortalMember,
   resolveMemberFromToken,
   setSessionCookie,
@@ -1101,6 +1111,97 @@ app.patch('/api/judges/:id', async (req, res) => {
   res.json({ ok: true })
 })
 
+// Archive instead of delete — entries.judged_by keeps pointing at the judge.
+app.post('/api/judges/:id/archive', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const { reason } = req.body ?? {}
+  const result = await getPool().query(
+    `UPDATE judges SET archived_at = COALESCE(archived_at, NOW()), archived_reason = $2 WHERE id = $1 RETURNING id`,
+    [req.params.id, typeof reason === 'string' && reason.trim() ? reason.trim() : 'Archived by an admin'],
+  )
+  if (!result.rows.length) return void res.status(404).json({ error: 'Judge not found' })
+  res.json({ ok: true })
+})
+
+app.post('/api/judges/:id/unarchive', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  const result = await getPool().query(
+    `UPDATE judges SET archived_at = NULL, archived_reason = NULL WHERE id = $1 RETURNING id`,
+    [req.params.id],
+  )
+  if (!result.rows.length) return void res.status(404).json({ error: 'Judge not found' })
+  res.json({ ok: true })
+})
+
+// ── Judge availability round ─────────────────────────────────────────────────
+
+/** Admin actions on the availability round: super_admin or competition_secretary. */
+function requireAvailabilityAdmin(req: express.Request, res: express.Response): boolean {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return false }
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET()) as { role: string }
+    if (!['super_admin', 'competition_secretary'].includes(payload.role)) {
+      res.status(403).json({ error: 'Only the super admin or competition secretary can do this' })
+      return false
+    }
+    return true
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return false
+  }
+}
+
+function sendAvailabilityError(res: express.Response, err: unknown) {
+  if (err instanceof AvailabilityError) return void res.status(err.status).json({ error: err.message, ...err.extra })
+  console.error('judge availability', err)
+  res.status(500).json({ error: err instanceof Error ? err.message : 'Error' })
+}
+
+app.get('/api/judge-availability/:seasonId', async (req, res) => {
+  if (!requireAuth(req, res)) return
+  try { res.json(await getAvailabilityOverview(req.params.seasonId)) }
+  catch (err) { sendAvailabilityError(res, err) }
+})
+
+app.post('/api/judge-availability/:seasonId/send', async (req, res) => {
+  if (!requireAvailabilityAdmin(req, res)) return
+  const { deadline, force, judgeIds } = req.body ?? {}
+  try { res.json(await sendAvailabilityInvites(req.params.seasonId, deadline, force === true, judgeIds)) }
+  catch (err) { sendAvailabilityError(res, err) }
+})
+
+app.post('/api/judge-availability/:seasonId/remind', async (req, res) => {
+  if (!requireAvailabilityAdmin(req, res)) return
+  try { res.json(await sendAvailabilityReminders(req.params.seasonId)) }
+  catch (err) { sendAvailabilityError(res, err) }
+})
+
+app.patch('/api/judge-availability/:seasonId/deadline', async (req, res) => {
+  if (!requireAvailabilityAdmin(req, res)) return
+  try { res.json(await updateAvailabilityDeadline(req.params.seasonId, req.body?.deadline)) }
+  catch (err) { sendAvailabilityError(res, err) }
+})
+
+app.post('/api/judge-availability/:seasonId/judges/:judgeId/resend', async (req, res) => {
+  if (!requireAvailabilityAdmin(req, res)) return
+  try { res.json(await resendAvailabilityInvite(req.params.seasonId, req.params.judgeId, req.body?.deadline)) }
+  catch (err) { sendAvailabilityError(res, err) }
+})
+
+// Public, token-gated
+app.get('/api/public/judge-availability/:token', async (req, res) => {
+  const data = await getAvailabilityPageData(req.params.token)
+  if (!data) return void res.status(404).json({ error: 'This link isn’t valid' })
+  res.json(data)
+})
+
+app.put('/api/public/judge-availability/:token', async (req, res) => {
+  const result = await saveAvailabilityResponse(req.params.token, req.body)
+  if (!result.ok) return void res.status(result.status).json({ error: result.error })
+  res.json(result.data)
+})
+
 // ── Applicant routes ──────────────────────────────────────────────────────────
 
 app.post('/api/applicants', async (req, res) => {
@@ -2104,7 +2205,7 @@ app.get('/api/dashboard', async (req, res) => {
          (SELECT COUNT(*)::int FROM members WHERE status = 'active' AND membership_type = 'life') AS life_members,
          (SELECT COUNT(*)::int FROM admin_users) AS committee_count,
          (SELECT COUNT(*)::int FROM applicants WHERE status = 'pending') AS pending_applicants,
-         (SELECT COUNT(*)::int FROM judges WHERE is_available) AS judges_available,
+         (SELECT COUNT(*)::int FROM judges WHERE is_available AND archived_at IS NULL) AS judges_available,
          (SELECT COUNT(DISTINCT member_id)::int FROM entries WHERE submitted_at >= NOW() - INTERVAL '90 days') AS recent_submitters`,
     ),
   ])
@@ -2243,10 +2344,15 @@ app.get('/api/applicants', async (req, res) => {
 
 app.get('/api/judges', async (req, res) => {
   if (!requireAuth(req, res)) return
+  // Archived judges (asked to be removed) are hidden unless explicitly requested.
+  const includeArchived = req.query.includeArchived === 'true'
   const result = await getPool().query(
     `SELECT j.id, j.name, j.email, j.bio, j.address, j.rating::float8, j.is_available, j.website, j.facebook, j.instagram,
+            j.archived_at, j.archived_reason,
             (SELECT COUNT(*)::int FROM competition_judges cj WHERE cj.judge_id = j.id) AS comp_count
-     FROM judges j ORDER BY j.name`,
+     FROM judges j
+     ${includeArchived ? '' : 'WHERE j.archived_at IS NULL'}
+     ORDER BY j.name`,
   )
   res.json(result.rows)
 })

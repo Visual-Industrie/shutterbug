@@ -173,7 +173,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 | `20261021000001_judge_availability.sql` | Judge archive columns, `tokens.season_id`, availability responses + preferences tables, email templates |
 | `20261021000002_member_details_changed_email_type.sql` | `member_details_changed` email type |
 | `20261021000003_applicant_member_profile_fields.sql` | `applicants.experience_level` → enum; consent timestamps on both tables; landline / interests / software on members; member portal link email copy |
-| `20261021000004_drop_applicants_facebook_invite.sql` | **Destructive** — drops `applicants.facebook_invite` (always false) |
+| `20261021000004_drop_applicants_facebook_invite.sql` | **Destructive — SKIPPED in prod** (2026-10-21; applied locally only). Drops `applicants.facebook_invite` (always false). Don't push |
 
 ---
 

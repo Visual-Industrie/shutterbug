@@ -57,7 +57,7 @@ A web app replacing a Google Sheets setup for the Wairarapa Camera Club. It mana
 - `POST /api/applicants/:id/record-payment` — converts applicant to active member
 
 ### Competition Management
-- Events list page with search, status filter, type filter
+- Events list page with search, status filter, type filter, season filter (only years with events loaded)
 - Add event modal (slide-in panel) — pre-filled with defaults from settings table
 - Event detail page (`/competitions/:id`) with full management UI
 - `POST /api/competitions`, `PATCH /api/competitions/:id`

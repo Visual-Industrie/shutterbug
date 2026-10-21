@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 import EmailLogList from '@/components/admin/EmailLogList'
+import MemberProfileFields from '@/components/MemberProfileFields'
+import { EMPTY_PROFILE_FORM, toProfileForm, type MemberProfileFormValues } from '@/shared/memberProfile'
 
 interface Member {
   id: string
@@ -9,6 +11,7 @@ interface Member {
   last_name: string
   email: string
   phone: string | null
+  landline: string | null
   address: string | null
   membership_number: string | null
   status: string
@@ -17,6 +20,10 @@ interface Member {
   subs_due_date: string | null
   joined_date: string | null
   experience_level: string | null
+  photographic_interests: string | null
+  software: string | null
+  privacy_act_ok: boolean
+  image_use_ok: boolean
   /** numeric in Postgres, so this arrives as a number — not a string. */
   annual_sub_amount: number | null
 }
@@ -30,16 +37,10 @@ interface Payment {
   recorded_by_name: string | null
 }
 
-interface MemberForm {
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
-  address: string
+interface MemberForm extends MemberProfileFormValues {
   membership_number: string
   status: string
   membership_type: string
-  experience_level: string
   subs_paid: boolean
   subs_due_date: string
   joined_date: string
@@ -47,10 +48,9 @@ interface MemberForm {
 }
 
 const EMPTY_FORM: MemberForm = {
-  first_name: '', last_name: '', email: '', phone: '', address: '',
+  ...EMPTY_PROFILE_FORM,
   membership_number: '', status: 'active', membership_type: 'full',
-  experience_level: '', subs_paid: false, subs_due_date: '', joined_date: '',
-  annual_sub_amount: '',
+  subs_paid: false, subs_due_date: '', joined_date: '', annual_sub_amount: '',
 }
 
 const STATUS_OPTS = ['all', 'active', 'inactive', 'suspended']
@@ -76,10 +76,15 @@ const CSV_COLUMNS: Array<{ header: string; value: (m: Member) => string | number
   { header: 'Last name',  value: m => m.last_name },
   { header: 'Email',      value: m => (isPrivate(m.email) ? '' : m.email) },
   { header: 'Phone',      value: m => m.phone },
+  { header: 'Landline',   value: m => m.landline },
   { header: 'Address',    value: m => m.address },
   { header: 'Type',       value: m => m.membership_type },
   { header: 'Status',     value: m => m.status },
   { header: 'Experience', value: m => m.experience_level },
+  { header: 'Interests',  value: m => m.photographic_interests },
+  { header: 'Software',   value: m => m.software },
+  { header: 'Privacy ok', value: m => (m.privacy_act_ok ? 'Yes' : 'No') },
+  { header: 'Image use ok', value: m => (m.image_use_ok ? 'Yes' : 'No') },
   { header: 'Subs paid',  value: m => (m.subs_paid ? 'Yes' : 'No') },
   { header: 'Subs due',   value: m => m.subs_due_date },
   { header: 'Joined',     value: m => m.joined_date },
@@ -223,15 +228,10 @@ export default function Members() {
   function openEdit(m: Member) {
     setEditing(m)
     setForm({
-      first_name: m.first_name,
-      last_name: m.last_name,
-      email: m.email,
-      phone: m.phone ?? '',
-      address: m.address ?? '',
+      ...toProfileForm(m),
       membership_number: m.membership_number ?? '',
       status: m.status,
       membership_type: m.membership_type,
-      experience_level: m.experience_level ?? '',
       subs_paid: m.subs_paid,
       subs_due_date: m.subs_due_date ?? '',
       joined_date: m.joined_date ?? '',
@@ -555,30 +555,13 @@ export default function Members() {
             </div>
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="First name *">
-                  <input type="text" required value={form.first_name} onChange={e => setField('first_name', e.target.value)} className={inputCls} />
-                </Field>
-                <Field label="Last name *">
-                  <input type="text" required value={form.last_name} onChange={e => setField('last_name', e.target.value)} className={inputCls} />
-                </Field>
-              </div>
+              <MemberProfileFields value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
 
-              <Field label="Email *">
-                <input type="email" required value={form.email} onChange={e => setField('email', e.target.value)} className={inputCls} />
-              </Field>
+              <div className="pt-1 border-t border-gray-100" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Membership</p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Phone">
-                  <input type="tel" value={form.phone} onChange={e => setField('phone', e.target.value)} className={inputCls} />
-                </Field>
-                <Field label="Member #">
-                  <input type="text" value={form.membership_number} onChange={e => setField('membership_number', e.target.value)} className={inputCls} />
-                </Field>
-              </div>
-
-              <Field label="Address">
-                <textarea rows={2} value={form.address} onChange={e => setField('address', e.target.value)} className={inputCls} placeholder="Street, suburb, town, postcode" />
+              <Field label="Member #">
+                <input type="text" value={form.membership_number} onChange={e => setField('membership_number', e.target.value)} className={inputCls} />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
@@ -597,15 +580,6 @@ export default function Members() {
                   </select>
                 </Field>
               </div>
-
-              <Field label="Experience level">
-                <select value={form.experience_level} onChange={e => setField('experience_level', e.target.value)} className={inputCls}>
-                  <option value="">— not set —</option>
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
-                </select>
-              </Field>
 
               <div className="pt-1 border-t border-gray-100">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Subscriptions</p>

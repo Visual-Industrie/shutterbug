@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { HEAR_ABOUT_US_OPTIONS } from '@/shared/memberProfile'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,10 +33,6 @@ const INITIAL: FormState = {
   photographic_interests: '', software: '', experience_level: '', known_members: false, hear_about_us: '',
   payment_method: '', pay_by_date: '',
 }
-
-const HEAR_OPTIONS = [
-  'Word of mouth', 'Facebook', 'Website', 'Newspaper / magazine', 'Poster / flyer', 'Other',
-]
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -179,7 +176,6 @@ export default function Join() {
           software: form.software.trim(),
           hear_about_us: form.hear_about_us,
           known_members: form.known_members,
-          facebook_invite: false,
           payment_method: form.payment_method,
           pay_by_date: form.pay_by_date,
         }),
@@ -385,7 +381,7 @@ export default function Join() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 >
                   <option value="">Select…</option>
-                  {HEAR_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  {HEAR_ABOUT_US_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </Field>
             </div>

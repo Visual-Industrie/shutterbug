@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
+import MemberProfileFields from '@/components/MemberProfileFields'
+import {
+  EMPTY_PROFILE_FORM,
+  EXPERIENCE_LABELS,
+  HEAR_ABOUT_US_OPTIONS,
+  toProfileForm,
+  type ExperienceLevel,
+  type MemberProfileFormValues,
+} from '@/shared/memberProfile'
 
 interface Applicant {
   id: string
@@ -8,21 +17,30 @@ interface Applicant {
   last_name: string
   email: string
   phone: string | null
+  landline: string | null
+  address: string | null
   membership_number: string | null
   application_date: string
   annual_sub_amount: string | null
   pay_by_date: string | null
   status: string
+  experience_level: ExperienceLevel | null
+  photographic_interests: string | null
+  software: string | null
+  hear_about_us: string | null
+  known_members: boolean
+  payment_method: string | null
+  privacy_act_ok: boolean
+  image_use_ok: boolean
 }
 
-interface ApplicantForm {
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
+interface ApplicantForm extends MemberProfileFormValues {
   annual_sub_amount: string
   pay_by_date: string
   status: string
+  hear_about_us: string
+  known_members: boolean
+  payment_method: string
 }
 
 const inputCls = 'w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
@@ -42,7 +60,10 @@ export default function Applicants() {
 
   const [editing, setEditing] = useState<Applicant | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState<ApplicantForm>({ first_name: '', last_name: '', email: '', phone: '', annual_sub_amount: '', pay_by_date: '', status: 'pending' })
+  const [form, setForm] = useState<ApplicantForm>({
+    ...EMPTY_PROFILE_FORM, annual_sub_amount: '', pay_by_date: '', status: 'pending',
+    hear_about_us: '', known_members: false, payment_method: '',
+  })
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data: applicants = [], isLoading } = useQuery({
@@ -77,13 +98,13 @@ export default function Applicants() {
   function openEdit(a: Applicant) {
     setEditing(a)
     setForm({
-      first_name: a.first_name,
-      last_name: a.last_name,
-      email: a.email,
-      phone: a.phone ?? '',
+      ...toProfileForm(a),
       annual_sub_amount: a.annual_sub_amount ?? '',
       pay_by_date: a.pay_by_date ?? '',
       status: a.status,
+      hear_about_us: a.hear_about_us ?? '',
+      known_members: a.known_members,
+      payment_method: a.payment_method ?? '',
     })
     setFormError(null)
     setShowModal(true)
@@ -139,6 +160,7 @@ export default function Applicants() {
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">{a.email}</div>
                   {a.phone && <div className="text-xs text-gray-400">{a.phone}</div>}
+                  {a.address && <div className="text-xs text-gray-400">{a.address}</div>}
                 </div>
                 <div className="flex items-center gap-1.5">
                   {statusBadge(a.status)}
@@ -154,6 +176,7 @@ export default function Applicants() {
                 <div><span className="text-gray-400">Applied:</span> {fmt(a.application_date)}</div>
                 <div><span className="text-gray-400">Subs:</span> {a.annual_sub_amount ? `$${a.annual_sub_amount}` : '—'}</div>
                 <div><span className="text-gray-400">Pay by:</span> {fmt(a.pay_by_date)}</div>
+                <div><span className="text-gray-400">Experience:</span> {a.experience_level ? EXPERIENCE_LABELS[a.experience_level] : '—'}</div>
               </div>
 
               {msg[a.id] && (
@@ -193,22 +216,30 @@ export default function Applicants() {
                 </div>
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="First name *">
-                  <input type="text" required value={form.first_name} onChange={e => setField('first_name', e.target.value)} className={inputCls} />
+              <MemberProfileFields value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
+
+              <div className="pt-1 border-t border-gray-100 space-y-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2">Application</p>
+                <Field label="How they heard about us">
+                  <select value={form.hear_about_us} onChange={e => setField('hear_about_us', e.target.value)} className={inputCls}>
+                    <option value="">— not set —</option>
+                    {/* Keep an unlisted legacy value selectable */}
+                    {[...HEAR_ABOUT_US_OPTIONS, ...(form.hear_about_us && !HEAR_ABOUT_US_OPTIONS.includes(form.hear_about_us) ? [form.hear_about_us] : [])]
+                      .map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
                 </Field>
-                <Field label="Last name *">
-                  <input type="text" required value={form.last_name} onChange={e => setField('last_name', e.target.value)} className={inputCls} />
+                <Field label="Plans to pay by">
+                  <select value={form.payment_method} onChange={e => setField('payment_method', e.target.value)} className={inputCls}>
+                    <option value="">— not set —</option>
+                    <option value="credit_card">Credit card</option>
+                    <option value="funds_transfer">Funds transfer</option>
+                  </select>
                 </Field>
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                  <input type="checkbox" checked={form.known_members} onChange={e => setField('known_members', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  Knows existing club members
+                </label>
               </div>
-
-              <Field label="Email *">
-                <input type="email" required value={form.email} onChange={e => setField('email', e.target.value)} className={inputCls} />
-              </Field>
-
-              <Field label="Phone">
-                <input type="tel" value={form.phone} onChange={e => setField('phone', e.target.value)} className={inputCls} />
-              </Field>
 
               <div className="pt-1 border-t border-gray-100">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Treasurer fields</p>

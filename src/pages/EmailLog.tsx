@@ -55,7 +55,7 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
   ],
   member_history_link: [
     { key: '[member_name]', description: 'Full name of the member' },
-    { key: '[history_link]', description: 'Button: "View my photo history"' },
+    { key: '[history_link]', description: 'Button: "Open my membership page"' },
     { key: '[history_url]', description: 'Plain text history URL' },
   ],
   results_notification: [

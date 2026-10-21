@@ -19,7 +19,7 @@ import {
   sendDeadlineReminders,
   sendDeadlineReminderToMember,
 } from './_lib/competition-actions.js'
-import { sendEmail, sendBulkEmail, sendPersonalisedRun, subsReminderEmail, applicationReceivedEmail, newApplicationEmail } from './_lib/email.js'
+import { sendEmail, sendBulkEmail, sendPersonalisedRun, subsReminderEmail, applicationReceivedEmail, newApplicationEmail, memberDetailsChangedEmail } from './_lib/email.js'
 import { getSubmissionData, createEntry, deleteEntry } from './_lib/submission.js'
 import { getJudgingData, scoreEntry, completeJudging } from './_lib/judging.js'
 import { getMemberHistory } from './_lib/history.js'
@@ -45,6 +45,16 @@ import {
   setSessionCookie,
   checkRateLimit,
 } from './_lib/portal.js'
+import {
+  PROFILE_INSERT,
+  PROFILE_PARAM_COUNT,
+  PROFILE_SET,
+  EMAIL_IN_USE,
+  isUniqueViolation,
+  placeholders,
+  profileParams,
+} from './_lib/member-profile.js'
+import { MEMBER_PROFILE_KEYS, applicationSchema, firstIssue, memberProfileSchema } from '../src/shared/memberProfile.js'
 
 const app = express()
 app.use(express.json())
@@ -982,47 +992,54 @@ app.post('/api/cron/process-automations', async (req, res) => {
 
 app.post('/api/members', async (req, res) => {
   if (!requireAuth(req, res)) return
+  const parsed = memberProfileSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return void res.status(400).json({ error: firstIssue(parsed.error) })
   const {
-    first_name, last_name, email, phone, address, membership_number, status = 'active',
-    membership_type = 'full', experience_level, subs_paid = false, subs_due_date,
-    joined_date, annual_sub_amount, privacy_act_ok = false, image_use_ok = false, club_rules_ok = false,
+    membership_number, status = 'active', membership_type = 'full', subs_paid = false,
+    subs_due_date, joined_date, annual_sub_amount, club_rules_ok = false,
   } = req.body ?? {}
-  if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
-  if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
-  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
-  const result = await getPool().query(
-    `INSERT INTO members (first_name,last_name,email,phone,address,membership_number,status,membership_type,
-     experience_level,subs_paid,subs_due_date,annual_sub_amount,joined_date,
-     privacy_act_ok,image_use_ok,club_rules_ok)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
-    [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null,
-     address?.trim() || null, membership_number?.trim() || null, status, membership_type, experience_level || null,
-     subs_paid, subs_due_date || null, annual_sub_amount || null, joined_date || null,
-     privacy_act_ok, image_use_ok, club_rules_ok],
-  )
-  res.status(201).json({ id: result.rows[0].id })
+  const admin = [
+    membership_number?.trim() || null, status, membership_type, subs_paid,
+    subs_due_date || null, annual_sub_amount || null, joined_date || null, club_rules_ok,
+  ]
+  try {
+    const result = await getPool().query(
+      `INSERT INTO members (${PROFILE_INSERT.columns},
+         membership_number,status,membership_type,subs_paid,subs_due_date,annual_sub_amount,joined_date,club_rules_ok)
+       VALUES (${PROFILE_INSERT.values}, ${placeholders(PROFILE_PARAM_COUNT + 1, admin.length)}) RETURNING id`,
+      [...profileParams(parsed.data), ...admin],
+    )
+    res.status(201).json({ id: result.rows[0].id })
+  } catch (err) {
+    if (isUniqueViolation(err)) return void res.status(409).json({ error: EMAIL_IN_USE })
+    throw err
+  }
 })
 
 app.patch('/api/members/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
+  const parsed = memberProfileSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return void res.status(400).json({ error: firstIssue(parsed.error) })
   const {
-    first_name, last_name, email, phone, address, membership_number, status, membership_type,
-    experience_level, subs_paid, subs_due_date, joined_date, annual_sub_amount,
+    membership_number, status, membership_type, subs_paid, subs_due_date, joined_date, annual_sub_amount,
   } = req.body ?? {}
-  if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
-  if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
-  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
-  const result = await getPool().query(
-    `UPDATE members SET first_name=$1,last_name=$2,email=$3,phone=$4,address=$5,membership_number=$6,
-     status=$7,membership_type=$8,experience_level=$9,subs_paid=$10,subs_due_date=$11,
-     joined_date=$12,annual_sub_amount=$13,updated_at=NOW() WHERE id=$14 RETURNING id`,
-    [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null,
-     address?.trim() || null, membership_number?.trim() || null, status, membership_type, experience_level || null,
-     subs_paid ?? false, subs_due_date || null, joined_date || null, annual_sub_amount || null,
-     req.params.id],
-  )
-  if (!result.rows.length) return void res.status(404).json({ error: 'Member not found' })
-  res.json({ ok: true })
+  const n = PROFILE_PARAM_COUNT
+  try {
+    const result = await getPool().query(
+      `UPDATE members SET ${PROFILE_SET},
+         membership_number=$${n + 1},status=$${n + 2},membership_type=$${n + 3},subs_paid=$${n + 4},
+         subs_due_date=$${n + 5},joined_date=$${n + 6},annual_sub_amount=$${n + 7},updated_at=NOW()
+       WHERE id=$${n + 8} RETURNING id`,
+      [...profileParams(parsed.data),
+       membership_number?.trim() || null, status, membership_type, subs_paid ?? false,
+       subs_due_date || null, joined_date || null, annual_sub_amount || null, req.params.id],
+    )
+    if (!result.rows.length) return void res.status(404).json({ error: 'Member not found' })
+    res.json({ ok: true })
+  } catch (err) {
+    if (isUniqueViolation(err)) return void res.status(409).json({ error: EMAIL_IN_USE })
+    throw err
+  }
 })
 
 app.post('/api/members/:id/send-history-link', async (req, res) => {
@@ -1205,21 +1222,14 @@ app.put('/api/public/judge-availability/:token', async (req, res) => {
 // ── Applicant routes ──────────────────────────────────────────────────────────
 
 app.post('/api/applicants', async (req, res) => {
-  const {
-    first_name, last_name, email, phone, landline, address,
-    privacy_act_ok, image_use_ok,
-    experience_level, photographic_interests, software, hear_about_us, known_members,
-    facebook_invite, payment_method, pay_by_date,
-  } = req.body ?? {}
-  if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
-  if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
-  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
-  if (!privacy_act_ok) return void res.status(400).json({ error: 'Privacy Act consent is required' })
-  if (!image_use_ok) return void res.status(400).json({ error: 'Image use consent is required' })
+  const parsed = applicationSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return void res.status(400).json({ error: firstIssue(parsed.error) })
+  const application = parsed.data
+  const { first_name, last_name, email, pay_by_date } = application
 
   const existing = await getPool().query(
     `SELECT id FROM applicants WHERE email = $1 AND status = 'pending'`,
-    [email.trim().toLowerCase()],
+    [email],
   )
   if (existing.rows.length > 0) return void res.status(409).json({ error: 'An application with this email is already pending' })
 
@@ -1234,27 +1244,21 @@ app.post('/api/applicants', async (req, res) => {
   )
   const membershipNumber = String(nextNumRes.rows[0].next_number)
 
+  const extra = [
+    membershipNumber, application.hear_about_us, application.known_members, application.payment_method, pay_by_date,
+  ]
   const result = await getPool().query(
     `INSERT INTO applicants (
-       first_name, last_name, email, phone, landline, address, membership_number,
-       privacy_act_ok, image_use_ok, club_rules_ok, status, application_date,
-       experience_level, photographic_interests, software, hear_about_us,
-       known_members, facebook_invite, payment_method, pay_by_date
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,'pending',CURRENT_DATE,$10,$11,$12,$13,$14,$15,$16,$17)
+       ${PROFILE_INSERT.columns},
+       membership_number, hear_about_us, known_members, payment_method, pay_by_date,
+       club_rules_ok, status, application_date
+     ) VALUES (${PROFILE_INSERT.values}, ${placeholders(PROFILE_PARAM_COUNT + 1, extra.length)},
+       true, 'pending', CURRENT_DATE)
      RETURNING id`,
-    [
-      first_name.trim(), last_name.trim(), email.trim().toLowerCase(),
-      phone?.trim() || null, landline?.trim() || null, address?.trim() || null,
-      membershipNumber,
-      true, true,
-      experience_level || null, photographic_interests?.trim() || null,
-      software?.trim() || null, hear_about_us || null,
-      !!known_members, !!facebook_invite,
-      payment_method || null, pay_by_date || null,
-    ],
+    [...profileParams(application), ...extra],
   )
   const appId = result.rows[0].id
-  const applicantName = `${first_name.trim()} ${last_name.trim()}`
+  const applicantName = `${first_name} ${last_name}`
 
   // Confirmation email to the applicant
   try {
@@ -1270,7 +1274,7 @@ app.post('/api/applicants', async (req, res) => {
       (pay_by_date ? new Date(pay_by_date).getFullYear() : new Date().getFullYear()),
     )
     const { subject, html } = await applicationReceivedEmail({
-      firstName: first_name.trim(),
+      firstName: first_name,
       membershipNumber,
       subsYear,
       subsAmount,
@@ -1279,7 +1283,7 @@ app.post('/api/applicants', async (req, res) => {
     })
     await sendEmail({
       type: 'application_received',
-      to: email.trim().toLowerCase(),
+      to: email,
       toName: applicantName,
       subject,
       html,
@@ -1301,7 +1305,7 @@ app.post('/api/applicants', async (req, res) => {
     )
     const { subject, html } = await newApplicationEmail({
       applicantName,
-      firstName: first_name.trim(),
+      firstName: first_name,
       receivedAt: new Date(),
       payByDate: pay_by_date || null,
     })
@@ -1322,15 +1326,18 @@ app.post('/api/applicants', async (req, res) => {
 
 app.patch('/api/applicants/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { first_name, last_name, email, phone, annual_sub_amount, pay_by_date, status } = req.body ?? {}
-  if (!first_name?.trim()) return void res.status(400).json({ error: 'First name is required' })
-  if (!last_name?.trim()) return void res.status(400).json({ error: 'Last name is required' })
-  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
+  const parsed = memberProfileSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return void res.status(400).json({ error: firstIssue(parsed.error) })
+  const { annual_sub_amount, pay_by_date, status, hear_about_us, known_members, payment_method } = req.body ?? {}
+  const n = PROFILE_PARAM_COUNT
   const result = await getPool().query(
-    `UPDATE applicants SET first_name=$1,last_name=$2,email=$3,phone=$4,
-     annual_sub_amount=$5,pay_by_date=$6,status=$7,updated_at=NOW() WHERE id=$8 RETURNING id`,
-    [first_name.trim(), last_name.trim(), email.trim().toLowerCase(), phone?.trim() || null,
-     annual_sub_amount || null, pay_by_date || null, status || 'pending', req.params.id],
+    `UPDATE applicants SET ${PROFILE_SET},
+       annual_sub_amount=$${n + 1},pay_by_date=$${n + 2},status=$${n + 3},
+       hear_about_us=$${n + 4},known_members=$${n + 5},payment_method=$${n + 6},updated_at=NOW()
+     WHERE id=$${n + 7} RETURNING id`,
+    [...profileParams(parsed.data),
+     annual_sub_amount || null, pay_by_date || null, status || 'pending',
+     hear_about_us?.trim() || null, !!known_members, payment_method || null, req.params.id],
   )
   if (!result.rows.length) return void res.status(404).json({ error: 'Applicant not found' })
   res.json({ ok: true })
@@ -1363,16 +1370,29 @@ app.post('/api/applicants/:id/record-payment', async (req, res) => {
   const subsAmountRow = subsAmountRes.rows[0]
   const subsAmount = parseFloat(subsAmountRow?.value ?? subsAmountRow?.default_value ?? '50.00')
 
-  const memberRes = await getPool().query(
-    `INSERT INTO members (
-       first_name,last_name,email,phone,membership_number,status,membership_type,
-       annual_sub_amount,subs_paid,subs_paid_date,subs_paid_amount,
-       privacy_act_ok,image_use_ok,club_rules_ok,joined_date
-     ) VALUES ($1,$2,$3,$4,$5,'active','full',$6,true,CURRENT_DATE,$6,$7,$8,$9,CURRENT_DATE)
-     RETURNING id`,
-    [ap.first_name, ap.last_name, ap.email, ap.phone, membershipNumber, subsAmount,
-     ap.privacy_act_ok, ap.image_use_ok, ap.club_rules_ok],
-  )
+  // Copy each member-relevant field explicitly — application-only fields
+  // (hear_about_us, known_members, pay_by_date) stay on the applicant.
+  let memberRes
+  try {
+    memberRes = await getPool().query(
+      `INSERT INTO members (
+         first_name,last_name,email,phone,landline,address,
+         experience_level,photographic_interests,software,payment_method,
+         privacy_act_ok,privacy_act_consented_at,image_use_ok,image_use_consented_at,club_rules_ok,
+         membership_number,status,membership_type,
+         annual_sub_amount,subs_paid,subs_paid_date,subs_paid_amount,joined_date
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'active','full',
+         $17,true,CURRENT_DATE,$17,CURRENT_DATE)
+       RETURNING id`,
+      [ap.first_name, ap.last_name, ap.email, ap.phone, ap.landline, ap.address,
+       ap.experience_level, ap.photographic_interests, ap.software, ap.payment_method,
+       ap.privacy_act_ok, ap.privacy_act_consented_at, ap.image_use_ok, ap.image_use_consented_at,
+       ap.club_rules_ok, membershipNumber, subsAmount],
+    )
+  } catch (err) {
+    if (isUniqueViolation(err)) return void res.status(409).json({ error: EMAIL_IN_USE })
+    throw err
+  }
   await getPool().query(
     `UPDATE applicants SET status='approved',updated_at=NOW() WHERE id=$1`,
     [req.params.id],
@@ -2122,51 +2142,83 @@ app.post('/api/portal/request-link', async (req, res) => {
   res.json(generic)
 })
 
-// Self-service profile update. Only address / phone / email are editable; every
-// other field (membership number, status, subs, points, …) is ignored. member_id
-// comes from the session, never the request body.
+const PORTAL_PROFILE_COLUMNS = `${MEMBER_PROFILE_KEYS.join(', ')}, membership_number, membership_type, status`
+
+function portalProfileResponse(m: Record<string, unknown>) {
+  const profile = Object.fromEntries(MEMBER_PROFILE_KEYS.map(k => [k, m[k]]))
+  return {
+    profile,
+    readOnly: { membership_number: m.membership_number, membership_type: m.membership_type, status: m.status },
+  }
+}
+
+// The signed-in member's editable details, plus read-only membership fields.
+app.get('/api/portal/profile', async (req, res) => {
+  const resolved = await getPortalMember(req)
+  if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
+  const result = await getPool().query(
+    `SELECT ${PORTAL_PROFILE_COLUMNS} FROM members WHERE id = $1`,
+    [resolved.member.id],
+  )
+  res.json(portalProfileResponse(result.rows[0]))
+})
+
+// Self-service profile update. memberProfileSchema strips everything that isn't
+// a personal field (membership number, status, type, subs, notes, …), so a
+// crafted request can't touch them. member_id comes from the session, never the body.
 app.patch('/api/portal/profile', async (req, res) => {
   const resolved = await getPortalMember(req)
   if (!resolved) return void res.status(401).json({ error: 'Not signed in' })
 
-  const { address, phone, email } = req.body ?? {}
-  if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
+  const parsed = memberProfileSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return void res.status(400).json({ error: firstIssue(parsed.error) })
+  const oldEmail = resolved.member.email
 
+  let m
   try {
     // NOTE (v1 decision): changing email here does NOT invalidate the current
     // magic-link token or require re-verification — the token is keyed to the
-    // member row, not the email. Straightforward update is acceptable for v1;
-    // revisit if email-based account takeover becomes a concern.
+    // member row, not the email. The old address gets a notice instead (below).
     const result = await getPool().query(
-      `UPDATE members SET email = $1, phone = $2, address = $3, updated_at = NOW()
-       WHERE id = $4
-       RETURNING id, first_name, last_name, email, phone, address, membership_number`,
-      [
-        email.trim().toLowerCase(),
-        phone?.trim() || null,
-        address?.trim() || null,
-        resolved.member.id,
-      ],
+      `UPDATE members SET ${PROFILE_SET}, updated_at = NOW()
+       WHERE id = $${PROFILE_PARAM_COUNT + 1}
+       RETURNING id, ${PORTAL_PROFILE_COLUMNS}`,
+      [...profileParams(parsed.data), resolved.member.id],
     )
-    const m = result.rows[0]
-    res.json({
-      member: {
-        id: m.id,
-        firstName: m.first_name,
-        lastName: m.last_name,
-        email: m.email,
-        phone: m.phone,
-        address: m.address,
-        membershipNumber: m.membership_number,
-      },
-    })
-  } catch (err: unknown) {
-    // Unique violation on members.email
-    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
-      return void res.status(409).json({ error: 'That email address is already in use by another member' })
-    }
+    m = result.rows[0]
+  } catch (err) {
+    if (isUniqueViolation(err)) return void res.status(409).json({ error: EMAIL_IN_USE })
     throw err
   }
+
+  if (m.email !== oldEmail.toLowerCase() && !oldEmail.includes('@privacy.wcc.local')) {
+    try {
+      const { subject, html } = await memberDetailsChangedEmail({ firstName: m.first_name, newEmail: m.email })
+      await sendEmail({
+        type: 'member_details_changed',
+        to: oldEmail,
+        toName: `${m.first_name} ${m.last_name}`,
+        subject,
+        html,
+        memberId: m.id,
+      })
+    } catch (err) {
+      console.error('Failed to send email-changed notice', err)
+    }
+  }
+
+  res.json({
+    member: {
+      id: m.id,
+      firstName: m.first_name,
+      lastName: m.last_name,
+      email: m.email,
+      phone: m.phone,
+      address: m.address,
+      membershipNumber: m.membership_number,
+    },
+    ...portalProfileResponse(m),
+  })
 })
 
 // ── Admin read routes ──────────────────────────────────────────────────────────
@@ -2265,8 +2317,9 @@ app.get('/api/members', async (req, res) => {
   if (status) { params.push(status); where.push(`status = $${params.length}`) }
   if (q) { params.push(`%${q}%`); where.push(`last_name ILIKE $${params.length}`) }
   if (exclude_private) where.push(`email NOT LIKE '%@privacy.wcc.local'`)
-  let sql = `SELECT id, first_name, last_name, email, phone, address, membership_number, status, membership_type,
+  let sql = `SELECT id, first_name, last_name, email, phone, landline, address, membership_number, status, membership_type,
                     subs_paid, subs_due_date::text, joined_date::text, experience_level,
+                    photographic_interests, software, privacy_act_ok, image_use_ok,
                     annual_sub_amount::float8, created_at
              FROM members
              ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -2335,8 +2388,10 @@ app.get('/api/email-log/:id/body', async (req, res) => {
 app.get('/api/applicants', async (req, res) => {
   if (!requireAuth(req, res)) return
   const result = await getPool().query(
-    `SELECT id, first_name, last_name, email, phone, membership_number, application_date::text,
-            annual_sub_amount::float8, pay_by_date::text, status
+    `SELECT id, first_name, last_name, email, phone, landline, address, membership_number, application_date::text,
+            annual_sub_amount::float8, pay_by_date::text, status,
+            experience_level, photographic_interests, software, hear_about_us, known_members,
+            payment_method, privacy_act_ok, image_use_ok
      FROM applicants ORDER BY application_date DESC`,
   )
   res.json(result.rows)

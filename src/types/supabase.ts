@@ -89,11 +89,13 @@ export type Database = {
           club_rules_ok: boolean
           created_at: string
           email: string
-          experience_level: string | null
-          facebook_invite: boolean
+          experience_level:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
           first_name: string
           hear_about_us: string | null
           id: string
+          image_use_consented_at: string | null
           image_use_ok: boolean
           known_members: boolean
           landline: string | null
@@ -104,6 +106,7 @@ export type Database = {
           payment_method: string | null
           phone: string | null
           photographic_interests: string | null
+          privacy_act_consented_at: string | null
           privacy_act_ok: boolean
           software: string | null
           status: Database["public"]["Enums"]["applicant_status"]
@@ -116,11 +119,13 @@ export type Database = {
           club_rules_ok?: boolean
           created_at?: string
           email: string
-          experience_level?: string | null
-          facebook_invite?: boolean
+          experience_level?:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
           first_name: string
           hear_about_us?: string | null
           id?: string
+          image_use_consented_at?: string | null
           image_use_ok?: boolean
           known_members?: boolean
           landline?: string | null
@@ -131,6 +136,7 @@ export type Database = {
           payment_method?: string | null
           phone?: string | null
           photographic_interests?: string | null
+          privacy_act_consented_at?: string | null
           privacy_act_ok?: boolean
           software?: string | null
           status?: Database["public"]["Enums"]["applicant_status"]
@@ -143,11 +149,13 @@ export type Database = {
           club_rules_ok?: boolean
           created_at?: string
           email?: string
-          experience_level?: string | null
-          facebook_invite?: boolean
+          experience_level?:
+            | Database["public"]["Enums"]["experience_level"]
+            | null
           first_name?: string
           hear_about_us?: string | null
           id?: string
+          image_use_consented_at?: string | null
           image_use_ok?: boolean
           known_members?: boolean
           landline?: string | null
@@ -158,6 +166,7 @@ export type Database = {
           payment_method?: string | null
           phone?: string | null
           photographic_interests?: string | null
+          privacy_act_consented_at?: string | null
           privacy_act_ok?: boolean
           software?: string | null
           status?: Database["public"]["Enums"]["applicant_status"]
@@ -835,15 +844,20 @@ export type Database = {
             | null
           first_name: string
           id: string
+          image_use_consented_at: string | null
           image_use_ok: boolean
           joined_date: string | null
+          landline: string | null
           last_name: string
           membership_number: string | null
           membership_type: Database["public"]["Enums"]["membership_type"]
           notes: string | null
           payment_method: string | null
           phone: string | null
+          photographic_interests: string | null
+          privacy_act_consented_at: string | null
           privacy_act_ok: boolean
+          software: string | null
           status: string
           sub_status: string
           subs_due_date: string | null
@@ -863,15 +877,20 @@ export type Database = {
             | null
           first_name: string
           id?: string
+          image_use_consented_at?: string | null
           image_use_ok?: boolean
           joined_date?: string | null
+          landline?: string | null
           last_name: string
           membership_number?: string | null
           membership_type?: Database["public"]["Enums"]["membership_type"]
           notes?: string | null
           payment_method?: string | null
           phone?: string | null
+          photographic_interests?: string | null
+          privacy_act_consented_at?: string | null
           privacy_act_ok?: boolean
+          software?: string | null
           status?: string
           sub_status?: string
           subs_due_date?: string | null
@@ -891,15 +910,20 @@ export type Database = {
             | null
           first_name?: string
           id?: string
+          image_use_consented_at?: string | null
           image_use_ok?: boolean
           joined_date?: string | null
+          landline?: string | null
           last_name?: string
           membership_number?: string | null
           membership_type?: Database["public"]["Enums"]["membership_type"]
           notes?: string | null
           payment_method?: string | null
           phone?: string | null
+          photographic_interests?: string | null
+          privacy_act_consented_at?: string | null
           privacy_act_ok?: boolean
+          software?: string | null
           status?: string
           sub_status?: string
           subs_due_date?: string | null
@@ -1127,6 +1151,7 @@ export type Database = {
         | "judge_availability_reminder"
         | "judge_availability_confirmation"
         | "judge_availability_admin_notice"
+        | "member_details_changed"
       entry_type: "projim" | "printim"
       event_type: "competition" | "award" | "other"
       experience_level: "beginner" | "intermediate" | "advanced"
@@ -1299,6 +1324,7 @@ export const Constants = {
         "judge_availability_reminder",
         "judge_availability_confirmation",
         "judge_availability_admin_notice",
+        "member_details_changed",
       ],
       entry_type: ["projim", "printim"],
       event_type: ["competition", "award", "other"],

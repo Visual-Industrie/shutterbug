@@ -24,11 +24,14 @@ import type {
   AvailabilityOverview,
   AvailabilityPageData,
   AvailabilitySubmitBody,
+  JudgeAttendance,
   JudgeAvailabilityResponse,
+  JudgeContact,
 } from '../../src/types/judge-availability.js'
 
 const appUrl = () => process.env.APP_URL ?? 'http://localhost:5173'
 const RESPONSES: JudgeAvailabilityResponse[] = ['keen', 'not_this_year', 'remove']
+const ATTENDANCE: JudgeAttendance[] = ['in_person', 'online']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // ── Dates ───────────────────────────────────────────────────────────────────
@@ -68,6 +71,12 @@ export function parseDeadline(val: unknown): Date | null {
 
 interface SeasonRow { id: string; year: number }
 interface JudgeRow { id: string; name: string; email: string; is_available: boolean; archived_at: string | null }
+interface JudgeContactRow {
+  name: string; email: string; address: string | null; website: string | null
+  facebook: string | null; instagram: string | null; bio: string | null
+  attendance_preference: JudgeAttendance | null
+}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 interface TokenRow { id: string; token: string; judge_id: string; season_id: string; expires_at: string | null; created_at: string }
 
 function firstName(name: string): string {
@@ -190,23 +199,53 @@ async function getResponse(judgeId: string, seasonId: string) {
   return { ...row, preferences: prefs.rows.map(p => p.competition_id) }
 }
 
+// Rating and internal notes are deliberately never selected — judges must not see them.
+async function getJudgeContact(judgeId: string): Promise<JudgeContact | null> {
+  const res = await getPool().query<JudgeContactRow>(
+    `SELECT name, email, address, website, facebook, instagram, bio, attendance_preference FROM judges WHERE id = $1`, [judgeId],
+  )
+  const r = res.rows[0]
+  if (!r) return null
+  return {
+    name: r.name, email: r.email, address: r.address ?? '', website: r.website ?? '',
+    facebook: r.facebook ?? '', instagram: r.instagram ?? '', bio: r.bio ?? '',
+    attendance: r.attendance_preference,
+  }
+}
+
+/** Trims the submitted contact details; returns an error message if they're unusable. */
+function parseContact(val: unknown): { contact: JudgeContact } | { error: string } {
+  const v = (val ?? {}) as Record<string, unknown>
+  const str = (k: keyof JudgeContact) => (typeof v[k] === 'string' ? (v[k] as string).trim() : '')
+  const contact: JudgeContact = {
+    name: str('name'), email: str('email').toLowerCase(), address: str('address'), website: str('website'),
+    facebook: str('facebook'), instagram: str('instagram'), bio: str('bio'),
+    attendance: ATTENDANCE.includes(v.attendance as JudgeAttendance) ? (v.attendance as JudgeAttendance) : null,
+  }
+  if (!contact.name) return { error: 'Please enter your name.' }
+  if (!EMAIL_RE.test(contact.email)) return { error: 'Please enter a valid email address.' }
+  if (!contact.attendance) return { error: 'Please choose whether you’d judge in person or online.' }
+  return { contact }
+}
+
 // ── Public page ─────────────────────────────────────────────────────────────
 
 export async function getAvailabilityPageData(tokenValue: string): Promise<AvailabilityPageData | null> {
   const token = await findToken(tokenValue)
   if (!token) return null
 
-  const [judge, season, current] = await Promise.all([
+  const [judge, season, current, contact] = await Promise.all([
     getJudge(token.judge_id),
     getSeason(token.season_id),
     getResponse(token.judge_id, token.season_id),
+    getJudgeContact(token.judge_id),
   ])
-  if (!judge || !season) return null
+  if (!judge || !season || !contact) return null
 
   const competitions = await getEligibleCompetitions(season.id, current?.preferences ?? [])
 
   return {
-    judge: { firstName: firstName(judge.name), name: judge.name, isAvailable: judge.is_available, archived: !!judge.archived_at },
+    judge: { firstName: firstName(judge.name), name: judge.name, isAvailable: judge.is_available, archived: !!judge.archived_at, contact },
     season: { id: season.id, year: season.year },
     deadline: token.expires_at ? new Date(token.expires_at).toISOString() : null,
     readOnly: token.expired,
@@ -236,6 +275,12 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
   if (new Set(requested).size !== requested.length) return { ok: false, status: 400, error: 'Each competition can only be picked once.' }
   if (response !== 'keen' && requested.length > 0) return { ok: false, status: 400, error: 'Preferences only apply when you’d like to judge.' }
   if (response === 'keen' && requested.length === 0) return { ok: false, status: 400, error: 'Select at least one competition.' }
+  let contact: JudgeContact | null = null
+  if (b.contact !== undefined) {
+    const parsed = parseContact(b.contact)
+    if ('error' in parsed) return { ok: false, status: 400, error: parsed.error }
+    contact = parsed.contact
+  }
 
   const pool = getPool()
   const season = await getSeason(token.season_id)
@@ -297,6 +342,15 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
       await client.query(
         `UPDATE judges SET is_available = TRUE, archived_at = NULL, archived_reason = NULL WHERE id = $1`,
         [token.judge_id],
+      )
+    }
+    if (contact) {
+      await client.query(
+        `UPDATE judges SET name = $2, email = $3, address = $4, website = $5, facebook = $6, instagram = $7, bio = $8,
+             attendance_preference = $9
+         WHERE id = $1`,
+        [token.judge_id, contact.name, contact.email, contact.address || null, contact.website || null,
+         contact.facebook || null, contact.instagram || null, contact.bio || null, contact.attendance],
       )
     }
     await client.query('COMMIT')

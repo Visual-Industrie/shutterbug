@@ -14,6 +14,8 @@ interface Judge {
   website: string | null
   facebook: string | null
   instagram: string | null
+  attendance_preference: 'in_person' | 'online' | null
+  internal_notes: string | null
   archived_at: string | null
   archived_reason: string | null
   comp_count: number
@@ -29,6 +31,8 @@ interface JudgeForm {
   website: string
   facebook: string
   instagram: string
+  attendance_preference: '' | 'in_person' | 'online'
+  internal_notes: string
 }
 
 interface JudgedComp {
@@ -40,8 +44,10 @@ interface JudgedComp {
 
 const EMPTY_FORM: JudgeForm = {
   name: '', email: '', bio: '', address: '', rating: '', is_available: true,
-  website: '', facebook: '', instagram: '',
+  website: '', facebook: '', instagram: '', attendance_preference: '', internal_notes: '',
 }
+
+const ATTENDANCE_LABEL = { in_person: 'In person', online: 'Online' } as const
 
 const inputCls = 'w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
 
@@ -200,6 +206,8 @@ export default function Judges() {
       website: j.website ?? '',
       facebook: j.facebook ?? '',
       instagram: j.instagram ?? '',
+      attendance_preference: j.attendance_preference ?? '',
+      internal_notes: j.internal_notes ?? '',
     })
     setFormError(null)
     setShowEdit(true)
@@ -339,6 +347,11 @@ export default function Judges() {
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${viewing.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {viewing.is_available ? 'Available' : 'Unavailable'}
                   </span>
+                  {viewing.attendance_preference && (
+                    <span className="text-xs px-2 py-0.5 rounded font-medium bg-blue-50 text-blue-700">
+                      {ATTENDANCE_LABEL[viewing.attendance_preference]}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-4">
@@ -403,6 +416,14 @@ export default function Judges() {
                 <div>
                   <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Bio</p>
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{viewing.bio}</p>
+                </div>
+              )}
+
+              {/* Internal review — admin only */}
+              {viewing.internal_notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wide mb-1">Internal review · not shown to judge</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{viewing.internal_notes}</p>
                 </div>
               )}
 
@@ -490,6 +511,24 @@ export default function Judges() {
                   </select>
                 </Field>
               </div>
+
+              <Field label="Attendance preference">
+                <select value={form.attendance_preference} onChange={e => setField('attendance_preference', e.target.value as JudgeForm['attendance_preference'])} className={inputCls}>
+                  <option value="">Not specified</option>
+                  <option value="in_person">In person</option>
+                  <option value="online">Online</option>
+                </select>
+              </Field>
+
+              <Field label="Internal review (not shown to judge)">
+                <textarea
+                  value={form.internal_notes}
+                  onChange={e => setField('internal_notes', e.target.value)}
+                  rows={4}
+                  className={`${inputCls} resize-none`}
+                  placeholder="How they went, feedback from members, anything to bear in mind…"
+                />
+              </Field>
 
               <div className="pt-1 border-t border-gray-100">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Online presence</p>

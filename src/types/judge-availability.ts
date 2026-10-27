@@ -1,6 +1,7 @@
 // Shared between api/_lib/judge-availability.ts and the React pages.
 
 export type JudgeAvailabilityResponse = 'keen' | 'not_this_year' | 'remove'
+export type JudgeAttendance = 'in_person' | 'online'
 
 export interface AvailabilityCompetition {
   id: string
@@ -16,7 +17,7 @@ export interface AvailabilityCompetition {
   filled: boolean
 }
 
-/** The judge's own details, shown on the form so they can correct them. Never includes rating. */
+/** The judge's own details, shown on the form so they can correct them. Never includes rating or internal notes. */
 export interface JudgeContact {
   name: string
   email: string
@@ -25,6 +26,8 @@ export interface JudgeContact {
   facebook: string
   instagram: string
   bio: string
+  /** Null until the judge has told us. */
+  attendance: JudgeAttendance | null
 }
 
 export interface AvailabilityPageData {

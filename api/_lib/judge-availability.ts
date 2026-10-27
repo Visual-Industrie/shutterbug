@@ -24,12 +24,14 @@ import type {
   AvailabilityOverview,
   AvailabilityPageData,
   AvailabilitySubmitBody,
+  JudgeAttendance,
   JudgeAvailabilityResponse,
   JudgeContact,
 } from '../../src/types/judge-availability.js'
 
 const appUrl = () => process.env.APP_URL ?? 'http://localhost:5173'
 const RESPONSES: JudgeAvailabilityResponse[] = ['keen', 'not_this_year', 'remove']
+const ATTENDANCE: JudgeAttendance[] = ['in_person', 'online']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // ── Dates ───────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ interface JudgeRow { id: string; name: string; email: string; is_available: bool
 interface JudgeContactRow {
   name: string; email: string; address: string | null; website: string | null
   facebook: string | null; instagram: string | null; bio: string | null
+  attendance_preference: JudgeAttendance | null
 }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 interface TokenRow { id: string; token: string; judge_id: string; season_id: string; expires_at: string | null; created_at: string }
@@ -196,16 +199,17 @@ async function getResponse(judgeId: string, seasonId: string) {
   return { ...row, preferences: prefs.rows.map(p => p.competition_id) }
 }
 
-// Rating is deliberately never selected — judges must not see it.
+// Rating and internal notes are deliberately never selected — judges must not see them.
 async function getJudgeContact(judgeId: string): Promise<JudgeContact | null> {
   const res = await getPool().query<JudgeContactRow>(
-    `SELECT name, email, address, website, facebook, instagram, bio FROM judges WHERE id = $1`, [judgeId],
+    `SELECT name, email, address, website, facebook, instagram, bio, attendance_preference FROM judges WHERE id = $1`, [judgeId],
   )
   const r = res.rows[0]
   if (!r) return null
   return {
     name: r.name, email: r.email, address: r.address ?? '', website: r.website ?? '',
     facebook: r.facebook ?? '', instagram: r.instagram ?? '', bio: r.bio ?? '',
+    attendance: r.attendance_preference,
   }
 }
 
@@ -216,9 +220,11 @@ function parseContact(val: unknown): { contact: JudgeContact } | { error: string
   const contact: JudgeContact = {
     name: str('name'), email: str('email').toLowerCase(), address: str('address'), website: str('website'),
     facebook: str('facebook'), instagram: str('instagram'), bio: str('bio'),
+    attendance: ATTENDANCE.includes(v.attendance as JudgeAttendance) ? (v.attendance as JudgeAttendance) : null,
   }
   if (!contact.name) return { error: 'Please enter your name.' }
   if (!EMAIL_RE.test(contact.email)) return { error: 'Please enter a valid email address.' }
+  if (!contact.attendance) return { error: 'Please choose whether you’d judge in person or online.' }
   return { contact }
 }
 
@@ -340,10 +346,11 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
     }
     if (contact) {
       await client.query(
-        `UPDATE judges SET name = $2, email = $3, address = $4, website = $5, facebook = $6, instagram = $7, bio = $8
+        `UPDATE judges SET name = $2, email = $3, address = $4, website = $5, facebook = $6, instagram = $7, bio = $8,
+             attendance_preference = $9
          WHERE id = $1`,
         [token.judge_id, contact.name, contact.email, contact.address || null, contact.website || null,
-         contact.facebook || null, contact.instagram || null, contact.bio || null],
+         contact.facebook || null, contact.instagram || null, contact.bio || null, contact.attendance],
       )
     }
     await client.query('COMMIT')

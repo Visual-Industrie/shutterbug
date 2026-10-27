@@ -722,6 +722,7 @@ export type Database = {
       judges: {
         Row: {
           address: string | null
+          attendance_preference: Database["public"]["Enums"]["judge_attendance"] | null
           archived_at: string | null
           archived_reason: string | null
           bio: string | null
@@ -730,6 +731,7 @@ export type Database = {
           facebook: string | null
           id: string
           instagram: string | null
+          internal_notes: string | null
           is_available: boolean
           name: string
           photo_drive_url: string | null
@@ -738,6 +740,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          attendance_preference?: Database["public"]["Enums"]["judge_attendance"] | null
           archived_at?: string | null
           archived_reason?: string | null
           bio?: string | null
@@ -746,6 +749,7 @@ export type Database = {
           facebook?: string | null
           id?: string
           instagram?: string | null
+          internal_notes?: string | null
           is_available?: boolean
           name: string
           photo_drive_url?: string | null
@@ -754,6 +758,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          attendance_preference?: Database["public"]["Enums"]["judge_attendance"] | null
           archived_at?: string | null
           archived_reason?: string | null
           bio?: string | null
@@ -762,6 +767,7 @@ export type Database = {
           facebook?: string | null
           id?: string
           instagram?: string | null
+          internal_notes?: string | null
           is_available?: boolean
           name?: string
           photo_drive_url?: string | null
@@ -1155,6 +1161,7 @@ export type Database = {
       entry_type: "projim" | "printim"
       event_type: "competition" | "award" | "other"
       experience_level: "beginner" | "intermediate" | "advanced"
+      judge_attendance: "in_person" | "online"
       judge_availability_response: "keen" | "not_this_year" | "remove"
       membership_type: "full" | "life" | "complimentary"
       token_type:
@@ -1329,6 +1336,7 @@ export const Constants = {
       entry_type: ["projim", "printim"],
       event_type: ["competition", "award", "other"],
       experience_level: ["beginner", "intermediate", "advanced"],
+      judge_attendance: ["in_person", "online"],
       judge_availability_response: ["keen", "not_this_year", "remove"],
       membership_type: ["full", "life", "complimentary"],
       token_type: [

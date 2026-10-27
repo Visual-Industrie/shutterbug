@@ -1097,31 +1097,37 @@ app.post('/api/members/:id/payments', async (req, res) => {
 
 // ── Judge routes ─────────────────────────────────────────────────────────────
 
+const JUDGE_ATTENDANCE = ['in_person', 'online']
+const toAttendance = (v: unknown) => (typeof v === 'string' && JUDGE_ATTENDANCE.includes(v) ? v : null)
+
 app.post('/api/judges', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { name, email, bio, address, rating, is_available = true, website, facebook, instagram } = req.body ?? {}
+  const { name, email, bio, address, rating, is_available = true, website, facebook, instagram, attendance_preference, internal_notes } = req.body ?? {}
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
-    `INSERT INTO judges (name,email,bio,address,rating,is_available,website,facebook,instagram) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    `INSERT INTO judges (name,email,bio,address,rating,is_available,website,facebook,instagram,attendance_preference,internal_notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [name.trim(), email.trim().toLowerCase(), bio?.trim() || null, address?.trim() || null,
      rating != null && rating !== '' ? parseFloat(rating) : null, is_available,
-     website?.trim() || null, facebook?.trim() || null, instagram?.trim() || null],
+     website?.trim() || null, facebook?.trim() || null, instagram?.trim() || null,
+     toAttendance(attendance_preference), internal_notes?.trim() || null],
   )
   res.status(201).json({ id: result.rows[0].id })
 })
 
 app.patch('/api/judges/:id', async (req, res) => {
   if (!requireAuth(req, res)) return
-  const { name, email, bio, address, rating, is_available, website, facebook, instagram } = req.body ?? {}
+  const { name, email, bio, address, rating, is_available, website, facebook, instagram, attendance_preference, internal_notes } = req.body ?? {}
   if (!name?.trim()) return void res.status(400).json({ error: 'Name is required' })
   if (!email?.trim()) return void res.status(400).json({ error: 'Email is required' })
   const result = await getPool().query(
     `UPDATE judges SET name=$1,email=$2,bio=$3,address=$4,rating=$5,is_available=$6,
-     website=$7,facebook=$8,instagram=$9 WHERE id=$10 RETURNING id`,
+     website=$7,facebook=$8,instagram=$9,attendance_preference=$10,internal_notes=$11 WHERE id=$12 RETURNING id`,
     [name.trim(), email.trim().toLowerCase(), bio?.trim() || null, address?.trim() || null,
      rating != null && rating !== '' ? parseFloat(rating) : null, is_available ?? true,
      website?.trim() || null, facebook?.trim() || null, instagram?.trim() || null,
+     toAttendance(attendance_preference), internal_notes?.trim() || null,
      req.params.id],
   )
   if (!result.rows.length) return void res.status(404).json({ error: 'Judge not found' })
@@ -2403,7 +2409,7 @@ app.get('/api/judges', async (req, res) => {
   const includeArchived = req.query.includeArchived === 'true'
   const result = await getPool().query(
     `SELECT j.id, j.name, j.email, j.bio, j.address, j.rating::float8, j.is_available, j.website, j.facebook, j.instagram,
-            j.archived_at, j.archived_reason,
+            j.attendance_preference, j.internal_notes, j.archived_at, j.archived_reason,
             (SELECT COUNT(*)::int FROM competition_judges cj WHERE cj.judge_id = j.id) AS comp_count
      FROM judges j
      ${includeArchived ? '' : 'WHERE j.archived_at IS NULL'}

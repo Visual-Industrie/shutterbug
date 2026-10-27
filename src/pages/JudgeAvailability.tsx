@@ -22,11 +22,17 @@ import { formatNzDate } from '@/lib/dates'
 import type {
   AvailabilityCompetition,
   AvailabilityPageData,
+  JudgeAttendance,
   JudgeAvailabilityResponse,
   JudgeContact,
 } from '@/types/judge-availability'
 
-const CONTACT_FIELDS: Array<{ key: Exclude<keyof JudgeContact, 'bio'>; label: string; type?: string; placeholder?: string; required?: boolean }> = [
+const ATTENDANCE_OPTIONS: Array<{ value: JudgeAttendance; label: string }> = [
+  { value: 'in_person', label: 'In person' },
+  { value: 'online', label: 'Online' },
+]
+
+const CONTACT_FIELDS: Array<{ key: Exclude<keyof JudgeContact, 'bio' | 'attendance'>; label: string; type?: string; placeholder?: string; required?: boolean }> = [
   { key: 'name', label: 'Name', required: true },
   { key: 'email', label: 'Email address', type: 'email', required: true },
   { key: 'address', label: 'Address' },
@@ -38,7 +44,7 @@ const CONTACT_FIELDS: Array<{ key: Exclude<keyof JudgeContact, 'bio'>; label: st
 const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500'
 
 function ContactSection({ contact, onChange }: { contact: JudgeContact; onChange: (c: JudgeContact) => void }) {
-  const set = (k: keyof JudgeContact, v: string) => onChange({ ...contact, [k]: v })
+  const set = <K extends keyof JudgeContact>(k: K, v: JudgeContact[K]) => onChange({ ...contact, [k]: v })
   return (
     <section className="bg-white border border-gray-200 rounded-xl p-5">
       <h2 className="text-sm font-semibold text-gray-900 mb-1">Your details</h2>
@@ -69,6 +75,34 @@ function ContactSection({ contact, onChange }: { contact: JudgeContact; onChange
             className={inputCls}
           />
         </label>
+        <fieldset className="sm:col-span-2">
+          <legend className="block text-xs font-medium text-gray-700 mb-1">
+            How would you prefer to judge?<span className="text-red-500"> *</span>
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {ATTENDANCE_OPTIONS.map(o => (
+              <label
+                key={o.value}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 cursor-pointer text-sm font-medium transition-colors ${
+                  contact.attendance === o.value ? 'border-amber-500 bg-amber-50 text-gray-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="attendance"
+                  value={o.value}
+                  checked={contact.attendance === o.value}
+                  onChange={() => set('attendance', o.value)}
+                  className="w-4 h-4 accent-amber-600"
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            We usually choose judges who can visit the club in person, but we can be flexible.
+          </p>
+        </fieldset>
       </div>
     </section>
   )
@@ -86,6 +120,12 @@ function ContactSummary({ contact }: { contact: JudgeContact }) {
             <dd className="text-gray-800 break-words">{contact[f.key]}</dd>
           </div>
         ))}
+        {contact.attendance && (
+          <>
+            <dt className="text-gray-500">Prefers to judge</dt>
+            <dd className="text-gray-800">{ATTENDANCE_OPTIONS.find(o => o.value === contact.attendance)?.label}</dd>
+          </>
+        )}
       </dl>
       {contact.bio && <p className="mt-3 text-sm text-gray-700 whitespace-pre-line">{contact.bio}</p>}
     </div>
@@ -335,7 +375,7 @@ export default function JudgeAvailability() {
   const available = data.competitions.filter(c => !c.filled)
   const filledPicks = data.competitions.filter(c => c.filled)
   const option = OPTIONS.find(o => o.value === choice)
-  const contactValid = !contact || (!!contact.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()))
+  const contactValid = !contact || (!!contact.name.trim() && !!contact.attendance && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()))
   const canSubmit = !!choice && !saving && contactValid && (choice !== 'keen' || selected.length > 0)
 
   return (
@@ -523,7 +563,7 @@ export default function JudgeAvailability() {
         <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-gray-200">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
             <div className="flex-1 text-xs text-gray-500">
-              {!contactValid && 'Please check your name and email'}
+              {!contactValid && 'Please check your details above'}
               {contactValid && !choice && 'Choose one of the options above'}
               {contactValid && choice === 'keen' && (selected.length === 0 ? 'Select at least one competition' : `${selected.length} selected`)}
             </div>

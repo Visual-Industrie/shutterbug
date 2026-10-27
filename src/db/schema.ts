@@ -26,6 +26,7 @@ export const entryTypeEnum = pgEnum('entry_type', ['projim', 'printim'])
 export const awardLevelEnum = pgEnum('award_level', ['honours', 'highly_commended', 'commended', 'accepted', 'winner', 'shortlisted'])
 export const tokenTypeEnum = pgEnum('token_type', ['submission', 'judging', 'member_history', 'judge_availability'])
 export const judgeAvailabilityResponseEnum = pgEnum('judge_availability_response', ['keen', 'not_this_year', 'remove'])
+export const judgeAttendanceEnum = pgEnum('judge_attendance', ['in_person', 'online'])
 export const adminRoleEnum = pgEnum('admin_role', ['president', 'competition_secretary', 'treasurer', 'committee', 'super_admin'])
 export const emailTypeEnum = pgEnum('email_type', [
   'submission_invite',
@@ -162,6 +163,9 @@ export const judges = pgTable('judges', {
   website: text('website'),
   facebook: text('facebook'),
   instagram: text('instagram'),
+  attendancePreference: judgeAttendanceEnum('attendance_preference'),
+  // Comp sec's private review, alongside rating. Never shown to the judge.
+  internalNotes: text('internal_notes'),
   // Archived judges are hidden from lists and sends; never hard-deleted (entries.judged_by).
   archivedAt: timestamp('archived_at', { withTimezone: true }),
   archivedReason: text('archived_reason'),

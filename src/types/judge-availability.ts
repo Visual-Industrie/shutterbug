@@ -16,8 +16,19 @@ export interface AvailabilityCompetition {
   filled: boolean
 }
 
+/** The judge's own details, shown on the form so they can correct them. Never includes rating. */
+export interface JudgeContact {
+  name: string
+  email: string
+  address: string
+  website: string
+  facebook: string
+  instagram: string
+  bio: string
+}
+
 export interface AvailabilityPageData {
-  judge: { firstName: string; name: string; isAvailable: boolean; archived: boolean }
+  judge: { firstName: string; name: string; isAvailable: boolean; archived: boolean; contact: JudgeContact }
   season: { id: string; year: number }
   /** Token expiry (ISO) — the response deadline. */
   deadline: string | null
@@ -35,6 +46,8 @@ export interface AvailabilitySubmitBody {
   response: JudgeAvailabilityResponse
   /** Competition ids, index 0 = rank 1. Must be empty unless response is 'keen'. */
   preferences: string[]
+  /** Updated contact details. Omitted = leave as is. */
+  contact?: JudgeContact
 }
 
 // ── Admin overview ──────────────────────────────────────────────────────────

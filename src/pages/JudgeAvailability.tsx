@@ -23,7 +23,74 @@ import type {
   AvailabilityCompetition,
   AvailabilityPageData,
   JudgeAvailabilityResponse,
+  JudgeContact,
 } from '@/types/judge-availability'
+
+const CONTACT_FIELDS: Array<{ key: Exclude<keyof JudgeContact, 'bio'>; label: string; type?: string; placeholder?: string; required?: boolean }> = [
+  { key: 'name', label: 'Name', required: true },
+  { key: 'email', label: 'Email address', type: 'email', required: true },
+  { key: 'address', label: 'Address' },
+  { key: 'website', label: 'Website', placeholder: 'https://' },
+  { key: 'facebook', label: 'Facebook', placeholder: 'Profile or page link' },
+  { key: 'instagram', label: 'Instagram', placeholder: '@handle or link' },
+]
+
+const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500'
+
+function ContactSection({ contact, onChange }: { contact: JudgeContact; onChange: (c: JudgeContact) => void }) {
+  const set = (k: keyof JudgeContact, v: string) => onChange({ ...contact, [k]: v })
+  return (
+    <section className="bg-white border border-gray-200 rounded-xl p-5">
+      <h2 className="text-sm font-semibold text-gray-900 mb-1">Your details</h2>
+      <p className="text-xs text-gray-500 mb-4">This is what we have on file for you. Please update anything that’s changed.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {CONTACT_FIELDS.map(f => (
+          <label key={f.key} className={f.key === 'address' ? 'sm:col-span-2' : ''}>
+            <span className="block text-xs font-medium text-gray-700 mb-1">
+              {f.label}{f.required && <span className="text-red-500"> *</span>}
+            </span>
+            <input
+              type={f.type ?? 'text'}
+              value={contact[f.key]}
+              onChange={e => set(f.key, e.target.value)}
+              placeholder={f.placeholder}
+              required={f.required}
+              className={inputCls}
+            />
+          </label>
+        ))}
+        <label className="sm:col-span-2">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Bio</span>
+          <textarea
+            value={contact.bio}
+            onChange={e => set('bio', e.target.value)}
+            rows={5}
+            placeholder="A little about you and your photography"
+            className={inputCls}
+          />
+        </label>
+      </div>
+    </section>
+  )
+}
+
+function ContactSummary({ contact }: { contact: JudgeContact }) {
+  const rows = CONTACT_FIELDS.filter(f => contact[f.key])
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-gray-900 mb-2">Your details</h2>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        {rows.map(f => (
+          <div key={f.key} className="contents">
+            <dt className="text-gray-500">{f.label}</dt>
+            <dd className="text-gray-800 break-words">{contact[f.key]}</dd>
+          </div>
+        ))}
+      </dl>
+      {contact.bio && <p className="mt-3 text-sm text-gray-700 whitespace-pre-line">{contact.bio}</p>}
+    </div>
+  )
+}
 
 const OPTIONS: Array<{ value: JudgeAvailabilityResponse; title: string; submit: string }> = [
   { value: 'keen', title: 'I’d love to judge — I’ll make my selections in order of preference below.', submit: 'Send my preferences' },
@@ -157,6 +224,7 @@ export default function JudgeAvailability() {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [contact, setContact] = useState<JudgeContact | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -168,6 +236,7 @@ export default function JudgeAvailability() {
     setData(d)
     if (initial) {
       setChoice(d.current.response)
+      setContact(d.judge.contact)
       // Drop picks that have been filled since — they can't be kept.
       const open = new Set(d.competitions.filter(c => !c.filled).map(c => c.id))
       setSelected(d.current.preferences.filter(id => open.has(id)))
@@ -217,7 +286,7 @@ export default function JudgeAvailability() {
       const res = await fetch(`/api/public/judge-availability/${token}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: choice, preferences: choice === 'keen' ? selected : [] }),
+        body: JSON.stringify({ response: choice, preferences: choice === 'keen' ? selected : [], contact: contact ?? undefined }),
       })
       const body = await res.json().catch(() => ({}))
       if (res.status === 409 && body.error === 'all_selected_filled') {
@@ -266,7 +335,8 @@ export default function JudgeAvailability() {
   const available = data.competitions.filter(c => !c.filled)
   const filledPicks = data.competitions.filter(c => c.filled)
   const option = OPTIONS.find(o => o.value === choice)
-  const canSubmit = !!choice && !saving && (choice !== 'keen' || selected.length > 0)
+  const contactValid = !contact || (!!contact.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()))
+  const canSubmit = !!choice && !saving && contactValid && (choice !== 'keen' || selected.length > 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -310,6 +380,7 @@ export default function JudgeAvailability() {
               </p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-5"><Summary data={data} /></div>
+            <div className="bg-white border border-gray-200 rounded-xl p-5"><ContactSummary contact={data.judge.contact} /></div>
             <button
               type="button"
               onClick={() => { setMode('form'); setSaveError(null) }}
@@ -323,6 +394,8 @@ export default function JudgeAvailability() {
         {/* ── Form ── */}
         {!data.readOnly && mode === 'form' && (
           <div className="space-y-6">
+            {contact && <ContactSection contact={contact} onChange={setContact} />}
+
             <p className="text-sm text-gray-600">
               Would you like to stay on our judges list, and which (if any) of our {data.season.year} competitions would you be interested in judging?
             </p>
@@ -450,8 +523,9 @@ export default function JudgeAvailability() {
         <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-gray-200">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
             <div className="flex-1 text-xs text-gray-500">
-              {!choice && 'Choose one of the options above'}
-              {choice === 'keen' && (selected.length === 0 ? 'Select at least one competition' : `${selected.length} selected`)}
+              {!contactValid && 'Please check your name and email'}
+              {contactValid && !choice && 'Choose one of the options above'}
+              {contactValid && choice === 'keen' && (selected.length === 0 ? 'Select at least one competition' : `${selected.length} selected`)}
             </div>
             {data.current.response && (
               <button

@@ -26,6 +26,16 @@ interface EmailTemplate {
   updated_at: string
 }
 
+// Judge / judging-deadline placeholders, available in every competition email.
+// (Judge details come from the competition's assigned judge(s); all blank if none is assigned.)
+const JUDGING_CLOSES_DATE = { key: '[judging_closes_date]', description: 'Date judging closes (e.g. "15 March 2026")' }
+const JUDGE_NAME = { key: '[judge_name]', description: 'Judge\'s name (blank if no judge assigned)' }
+const JUDGE_DETAILS = [
+  { key: '[judge_bio]', description: 'Judge\'s bio (blank if none)' },
+  { key: '[judge_links]', description: 'Judge\'s website / Facebook / Instagram links (only those filled in)' },
+  { key: '[judge_profile]', description: 'Ready-made highlighted block: judge name, bio and links' },
+]
+
 // Placeholders for each template key
 const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: string }>> = {
   submission_invite: [
@@ -35,6 +45,7 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[competition_description]', description: 'Event description (rich text block, blank if none set)' },
     { key: '[submission_link]', description: 'Button: "Submit your entries"' },
     { key: '[submission_url]', description: 'Plain text submission URL' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
   ],
   submission_reminder: [
     { key: '[member_name]', description: 'Full name of the member' },
@@ -43,6 +54,33 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[submission_link]', description: 'Button: "Manage your entries"' },
     { key: '[submission_url]', description: 'Plain text submission URL' },
     { key: '[entry_summary]', description: 'Paragraph: how many entries submitted (or none yet)' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
+  ],
+  deadline_reminder_none: [
+    { key: '[member_name]', description: 'Full name of the member' },
+    { key: '[competition_name]', description: 'Competition title' },
+    { key: '[closes_date]', description: 'Closing date' },
+    { key: '[submission_link]', description: 'Button: "Manage your entries"' },
+    { key: '[submission_url]', description: 'Plain text submission URL' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
+  ],
+  deadline_reminder_partial: [
+    { key: '[member_name]', description: 'Full name of the member' },
+    { key: '[competition_name]', description: 'Competition title' },
+    { key: '[closes_date]', description: 'Closing date' },
+    { key: '[submission_link]', description: 'Button: "Manage your entries"' },
+    { key: '[submission_url]', description: 'Plain text submission URL' },
+    { key: '[submitted_entries]', description: 'List of the member\'s submitted entries' },
+    { key: '[slots_remaining]', description: 'Remaining slots, e.g. "1 PROJIM, 2 PRINTIM"' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
+  ],
+  deadline_reminder_full: [
+    { key: '[member_name]', description: 'Full name of the member' },
+    { key: '[competition_name]', description: 'Competition title' },
+    { key: '[closes_date]', description: 'Closing date' },
+    { key: '[submission_link]', description: 'Button: "Manage your entries"' },
+    { key: '[submission_url]', description: 'Plain text submission URL' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
   ],
   judging_invite: [
     { key: '[judge_name]', description: 'Judge\'s name' },
@@ -52,6 +90,7 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[printim_count]', description: 'Number of printed images' },
     { key: '[judging_link]', description: 'Button: "Start judging"' },
     { key: '[judging_url]', description: 'Plain text judging URL' },
+    ...JUDGE_DETAILS,
   ],
   member_history_link: [
     { key: '[member_name]', description: 'Full name of the member' },
@@ -64,6 +103,8 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[results_table]', description: 'HTML table of entries with awards and scores' },
     { key: '[history_link]', description: 'Button: "View full history"' },
     { key: '[history_url]', description: 'Plain text history URL' },
+    { key: '[judged_by_line]', description: 'Line: "This competition was judged by …" (blank if no judge on record)' },
+    JUDGING_CLOSES_DATE, JUDGE_NAME, ...JUDGE_DETAILS,
   ],
   subs_reminder_first: [
     { key: '[member_name]', description: 'Full name of the member' },

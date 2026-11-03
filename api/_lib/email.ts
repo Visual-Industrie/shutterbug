@@ -496,6 +496,7 @@ const HTML_RAW_KEYS = new Set([
   'results_table', 'entry_summary', 'submitted_entries',
   'competition_description', 'judged_by_line',
   'competition_list', 'response_link', 'response_summary', 'judges_link', 'judge_comments',
+  'judge_bio', 'judge_links', 'judge_profile',
 ])
 
 export function htmlEsc(s: string): string {
@@ -533,12 +534,169 @@ export function makeButton(href: string, label: string): string {
   return `<a href="${href}" style="display:inline-block;padding:10px 20px;background:#b45309;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;">${label}</a>`
 }
 
+// ─── Competition judge placeholders ───────────────────────────────────────────
+
+/**
+ * Placeholders shared by every competition email template, built from the
+ * competition and its assigned judge(s):
+ *   [judging_closes_date] – when judging closes ("TBA" if not set)
+ *   [judge_name]          – judge name(s), joined with " & " (blank if none assigned)
+ *   [judge_bio]           – bio paragraph(s), blank if none
+ *   [judge_links]         – "Website · Facebook · Instagram" links, blank if none
+ *   [judge_profile]       – a ready-made highlighted block: name, bio and links
+ * Only name, bio and the three public links are ever read from the judges table —
+ * never rating, address or internal notes.
+ */
+export interface CompetitionJudgeVars {
+  judging_closes_date: string
+  judge_name: string
+  judge_bio: string
+  judge_links: string
+  judge_profile: string
+}
+
+/** Long NZ date in club time, so a late-evening deadline doesn't render as the wrong day on a UTC server. */
+function fmtNzDate(d: Date | string | null): string {
+  if (!d) return 'TBA'
+  const parsed = new Date(d)
+  if (isNaN(parsed.getTime())) return 'TBA'
+  return parsed.toLocaleDateString('en-NZ', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Pacific/Auckland',
+  })
+}
+
+function attrEsc(s: string): string {
+  return htmlEsc(s).replace(/"/g, '&quot;')
+}
+
+/**
+ * Turns whatever was typed into a judge's website/social field (full URL, bare
+ * domain, or an @handle) into a safe http(s) URL, or null if it isn't usable.
+ */
+function normaliseJudgeUrl(raw: string | null, kind: 'website' | 'facebook' | 'instagram'): string | null {
+  const value = raw?.trim()
+  if (!value || /\s/.test(value)) return null // a URL or handle never contains spaces
+
+  let candidate = value
+  if (!/^https?:\/\//i.test(candidate)) {
+    // On the social fields, anything that isn't a path or a platform domain is a handle
+    // (Instagram handles often contain dots, so a dot doesn't make it a domain).
+    const isPlatformDomain = /(^|\.)(instagram|facebook|fb)\.(com|me)(\/|$)/i.test(candidate)
+    const isHandle = kind !== 'website' && !candidate.includes('/') && !isPlatformDomain
+    candidate = isHandle
+      ? `https://${kind}.com/${candidate.replace(/^@/, '')}`
+      : `https://${candidate}`
+  }
+
+  try {
+    const url = new URL(candidate)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+interface JudgeRow {
+  name: string
+  bio: string | null
+  website: string | null
+  facebook: string | null
+  instagram: string | null
+}
+
+function judgeLinksHtml(j: JudgeRow): string {
+  const links: Array<[string, string | null]> = [
+    ['Website', normaliseJudgeUrl(j.website, 'website')],
+    ['Facebook', normaliseJudgeUrl(j.facebook, 'facebook')],
+    ['Instagram', normaliseJudgeUrl(j.instagram, 'instagram')],
+  ]
+  return links
+    .filter((l): l is [string, string] => l[1] !== null)
+    .map(([label, href]) => `<a href="${attrEsc(href)}">${label}</a>`)
+    .join(' · ')
+}
+
+function judgeBioHtml(bio: string | null): string {
+  const text = bio?.trim()
+  return text ? htmlEsc(text).replace(/\r?\n/g, '<br>') : ''
+}
+
+const EMPTY_JUDGE_VARS: Omit<CompetitionJudgeVars, 'judging_closes_date'> = {
+  judge_name: '', judge_bio: '', judge_links: '', judge_profile: '',
+}
+
+/**
+ * Loads the shared judge/close-date placeholders for a competition. Memoised
+ * for the length of a bulk run, so a send to the whole membership queries once.
+ * Pass judgeId to restrict to a single judge (e.g. the judging invite, which is
+ * addressed to one judge).
+ */
+export function getCompetitionJudgeVars(
+  competitionId: string,
+  judgeId?: string | null,
+): Promise<CompetitionJudgeVars> {
+  return cached(`judgevars:${competitionId}:${judgeId ?? ''}`, () => loadCompetitionJudgeVars(competitionId, judgeId ?? null))
+}
+
+async function loadCompetitionJudgeVars(competitionId: string, judgeId: string | null): Promise<CompetitionJudgeVars> {
+  const pool = getPool()
+  const [compRes, judgesRes] = await Promise.all([
+    pool.query(`SELECT judging_closes_at FROM competitions WHERE id = $1`, [competitionId]),
+    pool.query(
+      `SELECT j.name, j.bio, j.website, j.facebook, j.instagram
+       FROM competition_judges cj
+       JOIN judges j ON j.id = cj.judge_id
+       WHERE cj.competition_id = $1 AND ($2::uuid IS NULL OR j.id = $2::uuid)
+       ORDER BY j.name`,
+      [competitionId, judgeId],
+    ),
+  ])
+
+  const judging_closes_date = fmtNzDate(compRes.rows[0]?.judging_closes_at ?? null)
+  const judges = judgesRes.rows as JudgeRow[]
+  if (judges.length === 0) return { judging_closes_date, ...EMPTY_JUDGE_VARS }
+
+  const several = judges.length > 1
+  const heading = (j: JudgeRow) => (several ? `<strong>${htmlEsc(j.name)}</strong><br>` : '')
+
+  const judge_bio = judges
+    .filter(j => judgeBioHtml(j.bio))
+    .map(j => `<p>${heading(j)}${judgeBioHtml(j.bio)}</p>`)
+    .join('')
+
+  const judge_links = judges
+    .filter(j => judgeLinksHtml(j))
+    .map(j => `<p>${heading(j)}${judgeLinksHtml(j)}</p>`)
+    .join('')
+
+  const judge_profile = judges
+    .map(j => {
+      const bio = judgeBioHtml(j.bio)
+      const links = judgeLinksHtml(j)
+      return `<div style="margin:12px 0;padding:12px 16px;background:#fef3c7;border-left:3px solid #b45309;border-radius:4px">`
+        + `<strong>${htmlEsc(j.name)}</strong>`
+        + (bio ? `<br>${bio}` : '')
+        + (links ? `<br>${links}` : '')
+        + `</div>`
+    })
+    .join('')
+
+  return {
+    judging_closes_date,
+    judge_name: judges.map(j => j.name).join(' & '),
+    judge_bio,
+    judge_links,
+    judge_profile,
+  }
+}
+
 // ─── Email templates ──────────────────────────────────────────────────────────
 
 const appUrl = process.env.APP_URL ?? 'http://localhost:5173'
 
 export async function submissionInviteEmail(opts: {
   memberName: string
+  competitionId: string
   competitionName: string
   closesAt: string | null
   token: string
@@ -556,6 +714,7 @@ export async function submissionInviteEmail(opts: {
   const tmpl = await getEmailTemplate('submission_invite')
   if (tmpl) {
     const vars = {
+      ...await getCompetitionJudgeVars(opts.competitionId),
       member_name: opts.memberName,
       competition_name: opts.competitionName,
       closes_date: closes,
@@ -582,6 +741,7 @@ ${descriptionHtml}
 
 export async function submissionReminderEmail(opts: {
   memberName: string
+  competitionId: string
   competitionName: string
   closesAt: string | null
   token: string
@@ -598,6 +758,7 @@ export async function submissionReminderEmail(opts: {
   const tmpl = await getEmailTemplate('submission_reminder')
   if (tmpl) {
     const vars = {
+      ...await getCompetitionJudgeVars(opts.competitionId),
       member_name: opts.memberName,
       competition_name: opts.competitionName,
       closes_date: closes,
@@ -620,7 +781,9 @@ ${entrySummary}
 }
 
 export async function judgingInviteEmail(opts: {
+  judgeId: string
   judgeName: string
+  competitionId: string
   competitionName: string
   judgingClosesAt: string | null
   projimCount: number
@@ -628,13 +791,13 @@ export async function judgingInviteEmail(opts: {
   token: string
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/judge/${opts.token}`
-  const closes = opts.judgingClosesAt
-    ? new Date(opts.judgingClosesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
-    : 'TBA'
+  const closes = fmtNzDate(opts.judgingClosesAt)
 
   const tmpl = await getEmailTemplate('judging_invite')
   if (tmpl) {
     const vars = {
+      // Restricted to the invited judge so [judge_bio] etc. match [judge_name].
+      ...await getCompetitionJudgeVars(opts.competitionId, opts.judgeId),
       judge_name: opts.judgeName,
       competition_name: opts.competitionName,
       judging_closes_date: closes,
@@ -734,6 +897,7 @@ ${urgency}
 
 export async function deadlineReminderEmail(opts: {
   memberName: string
+  competitionId: string
   competitionName: string
   closesAt: string | null
   token: string
@@ -788,6 +952,7 @@ export async function deadlineReminderEmail(opts: {
       printimLeft > 0 ? `${printimLeft} PRINTIM` : '',
     ].filter(Boolean).join(', ')
     const vars = {
+      ...await getCompetitionJudgeVars(opts.competitionId),
       member_name: opts.memberName,
       competition_name: opts.competitionName,
       closes_date: closes,
@@ -811,6 +976,7 @@ ${defaultIntro}
 
 export async function resultsNotificationEmail(opts: {
   memberName: string
+  competitionId: string
   competitionName: string
   entries: Array<{ title: string; type: string; award: string | null; points: number | null; comment?: string | null; judgeName?: string | null }>
   token: string
@@ -860,8 +1026,10 @@ export async function resultsNotificationEmail(opts: {
   const tmpl = await getEmailTemplate('results_notification')
   if (tmpl) {
     const vars = {
+      ...await getCompetitionJudgeVars(opts.competitionId),
       member_name: opts.memberName,
       competition_name: opts.competitionName,
+      // Entry-based names win over the competition's assigned judge(s) here.
       judge_name: judgedBy,
       judged_by_line: judgedByLine,
       results_table: resultsTable,

@@ -41,6 +41,8 @@ export interface AvailabilityPageData {
     response: JudgeAvailabilityResponse | null
     /** Competition ids in rank order (index 0 = first choice). */
     preferences: string[]
+    /** Optional comments left with the response; '' if none. */
+    comments: string
     respondedAt: string | null
   }
 }
@@ -49,6 +51,8 @@ export interface AvailabilitySubmitBody {
   response: JudgeAvailabilityResponse
   /** Competition ids, index 0 = rank 1. Must be empty unless response is 'keen'. */
   preferences: string[]
+  /** Always optional, for any response. */
+  comments?: string
   /** Updated contact details. Omitted = leave as is. */
   contact?: JudgeContact
 }
@@ -70,6 +74,7 @@ export interface AvailabilityOverviewJudge {
   respondedAt: string | null
   /** Competition ids in rank order. */
   preferences: string[]
+  comments: string | null
 }
 
 export interface AvailabilityOverview {

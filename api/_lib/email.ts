@@ -495,7 +495,7 @@ const HTML_RAW_KEYS = new Set([
   'submission_link', 'judging_link', 'history_link', 'review_link',
   'results_table', 'entry_summary', 'submitted_entries',
   'competition_description', 'judged_by_line',
-  'competition_list', 'response_link', 'response_summary', 'judges_link',
+  'competition_list', 'response_link', 'response_summary', 'judges_link', 'judge_comments',
 ])
 
 export function htmlEsc(s: string): string {

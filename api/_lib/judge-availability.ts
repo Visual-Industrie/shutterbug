@@ -33,6 +33,7 @@ const appUrl = () => process.env.APP_URL ?? 'http://localhost:5173'
 const RESPONSES: JudgeAvailabilityResponse[] = ['keen', 'not_this_year', 'remove']
 const ATTENDANCE: JudgeAttendance[] = ['in_person', 'online']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_COMMENTS = 2000
 
 // ── Dates ───────────────────────────────────────────────────────────────────
 
@@ -186,8 +187,8 @@ async function findToken(tokenValue: string): Promise<(TokenRow & { expired: boo
 }
 
 async function getResponse(judgeId: string, seasonId: string) {
-  const res = await getPool().query<{ id: string; response: JudgeAvailabilityResponse; updated_at: string }>(
-    `SELECT id, response, updated_at FROM judge_availability_responses WHERE judge_id = $1 AND season_id = $2`,
+  const res = await getPool().query<{ id: string; response: JudgeAvailabilityResponse; comments: string | null; updated_at: string }>(
+    `SELECT id, response, comments, updated_at FROM judge_availability_responses WHERE judge_id = $1 AND season_id = $2`,
     [judgeId, seasonId],
   )
   const row = res.rows[0]
@@ -253,6 +254,7 @@ export async function getAvailabilityPageData(tokenValue: string): Promise<Avail
     current: {
       response: current?.response ?? null,
       preferences: current?.preferences ?? [],
+      comments: current?.comments ?? '',
       respondedAt: current?.updated_at ? new Date(current.updated_at).toISOString() : null,
     },
   }
@@ -275,6 +277,8 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
   if (new Set(requested).size !== requested.length) return { ok: false, status: 400, error: 'Each competition can only be picked once.' }
   if (response !== 'keen' && requested.length > 0) return { ok: false, status: 400, error: 'Preferences only apply when you’d like to judge.' }
   if (response === 'keen' && requested.length === 0) return { ok: false, status: 400, error: 'Select at least one competition.' }
+  const comments = typeof b.comments === 'string' ? b.comments.trim() : ''
+  if (comments.length > MAX_COMMENTS) return { ok: false, status: 400, error: `Comments can be up to ${MAX_COMMENTS} characters.` }
   let contact: JudgeContact | null = null
   if (b.contact !== undefined) {
     const parsed = parseContact(b.contact)
@@ -313,12 +317,12 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
     previous = prev.rows[0]?.response ?? null
 
     const saved = await client.query<{ id: string }>(
-      `INSERT INTO judge_availability_responses (judge_id, season_id, response)
-       VALUES ($1, $2, $3)
+      `INSERT INTO judge_availability_responses (judge_id, season_id, response, comments)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (judge_id, season_id)
-       DO UPDATE SET response = EXCLUDED.response, updated_at = NOW()
+       DO UPDATE SET response = EXCLUDED.response, comments = EXCLUDED.comments, updated_at = NOW()
        RETURNING id`,
-      [token.judge_id, season.id, response],
+      [token.judge_id, season.id, response, comments || null],
     )
     const responseId = saved.rows[0].id
 
@@ -333,9 +337,10 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
     }
 
     if (response === 'remove') {
+      const reason = `Asked to be removed via the ${season.year} availability form`
       await client.query(
         `UPDATE judges SET archived_at = COALESCE(archived_at, NOW()), archived_reason = $2 WHERE id = $1`,
-        [token.judge_id, `Asked to be removed via the ${season.year} availability form`],
+        [token.judge_id, comments ? `${reason}\n\nComments: ${comments}` : reason],
       )
     } else {
       // Staying on the list (this year or future years) → available, and un-archived.
@@ -383,7 +388,7 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
 
   if (response === 'remove' && previous !== 'remove') {
     try {
-      await sendAdminRemovalNotice({ judge, season, deadline: data.deadline })
+      await sendAdminRemovalNotice({ judge, season, deadline: data.deadline, comments })
     } catch (err) {
       console.error('judge availability admin notice failed', err)
     }
@@ -504,7 +509,14 @@ ${summary}
   }
 }
 
-async function sendAdminRemovalNotice(opts: { judge: JudgeRow; season: SeasonRow; deadline: string | null }) {
+/** The judge's comments as an email block; '' when they left none. */
+function commentsHtml(comments: string): string {
+  if (!comments) return ''
+  return `<p><strong>Their comments:</strong></p>
+<blockquote style="margin:0 0 16px;padding:8px 14px;border-left:3px solid #d1d5db;color:#374151;white-space:pre-line">${htmlEsc(comments)}</blockquote>`
+}
+
+async function sendAdminRemovalNotice(opts: { judge: JudgeRow; season: SeasonRow; deadline: string | null; comments: string }) {
   const admins = await getPool().query<{ email: string; name: string }>(
     `SELECT email, name FROM admin_users WHERE role IN ('super_admin', 'competition_secretary') ORDER BY name`,
   )
@@ -516,6 +528,7 @@ async function sendAdminRemovalNotice(opts: { judge: JudgeRow; season: SeasonRow
     season_year: String(opts.season.year),
     deadline_date: formatNzDate(opts.deadline),
     judges_link: makeButton(`${appUrl()}/judges`, 'Open Judges'),
+    judge_comments: commentsHtml(opts.comments),
   }
   const tmpl = await getEmailTemplate('judge_availability_admin_notice')
   const subject = tmpl ? applyTemplate(tmpl.subject_template, vars) : `Judge removed themselves: ${vars.judge_name}`
@@ -523,6 +536,7 @@ async function sendAdminRemovalNotice(opts: { judge: JudgeRow; season: SeasonRow
     ? applyTemplate(tmpl.body_html, vars)
     : `<p><strong>${htmlEsc(vars.judge_name)}</strong> (${htmlEsc(vars.judge_email)}) has asked to be removed from the judges list in response to the ${vars.season_year} availability request.</p>
 <p>They've been archived in Shutterbug. They can undo this using their link until ${vars.deadline_date}.</p>
+${vars.judge_comments}
 <p>${vars.judges_link}</p>`
 
   await withSendCache(async () => {
@@ -571,8 +585,8 @@ export async function getAvailabilityOverview(seasonId: string): Promise<Availab
       [seasonId],
     ),
     getSeasonTokens(seasonId),
-    pool.query<{ id: string; judge_id: string; response: JudgeAvailabilityResponse; updated_at: string; prefs: string[] | null }>(
-      `SELECT r.id, r.judge_id, r.response, r.updated_at,
+    pool.query<{ id: string; judge_id: string; response: JudgeAvailabilityResponse; comments: string | null; updated_at: string; prefs: string[] | null }>(
+      `SELECT r.id, r.judge_id, r.response, r.comments, r.updated_at,
               (SELECT array_agg(p.competition_id ORDER BY p.rank) FROM judge_competition_preferences p WHERE p.response_id = r.id) AS prefs
        FROM judge_availability_responses r WHERE r.season_id = $1`,
       [seasonId],
@@ -604,6 +618,7 @@ export async function getAvailabilityOverview(seasonId: string): Promise<Availab
         response: r?.response ?? null,
         respondedAt: r ? new Date(r.updated_at).toISOString() : null,
         preferences: r?.prefs ?? [],
+        comments: r?.comments ?? null,
       }
     }),
   }

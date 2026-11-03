@@ -216,6 +216,20 @@ function SortableRow({
 }
 
 function Summary({ data }: { data: AvailabilityPageData }) {
+  return (
+    <>
+      <ResponseSummary data={data} />
+      {data.current.comments && (
+        <div className="mt-4">
+          <h3 className="text-xs font-medium text-gray-500 mb-1">Your comments</h3>
+          <p className="text-sm text-gray-700 whitespace-pre-line">{data.current.comments}</p>
+        </div>
+      )}
+    </>
+  )
+}
+
+function ResponseSummary({ data }: { data: AvailabilityPageData }) {
   const byId = new Map(data.competitions.map(c => [c.id, c]))
   const { response, preferences } = data.current
   if (response === 'keen') {
@@ -265,6 +279,7 @@ export default function JudgeAvailability() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [contact, setContact] = useState<JudgeContact | null>(null)
+  const [comments, setComments] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -277,6 +292,7 @@ export default function JudgeAvailability() {
     if (initial) {
       setChoice(d.current.response)
       setContact(d.judge.contact)
+      setComments(d.current.comments)
       // Drop picks that have been filled since — they can't be kept.
       const open = new Set(d.competitions.filter(c => !c.filled).map(c => c.id))
       setSelected(d.current.preferences.filter(id => open.has(id)))
@@ -326,7 +342,7 @@ export default function JudgeAvailability() {
       const res = await fetch(`/api/public/judge-availability/${token}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: choice, preferences: choice === 'keen' ? selected : [], contact: contact ?? undefined }),
+        body: JSON.stringify({ response: choice, preferences: choice === 'keen' ? selected : [], comments, contact: contact ?? undefined }),
       })
       const body = await res.json().catch(() => ({}))
       if (res.status === 409 && body.error === 'all_selected_filled') {
@@ -543,6 +559,20 @@ export default function JudgeAvailability() {
                   </section>
                 )}
               </>
+            )}
+
+            {choice && (
+              <label className="block">
+                <span className="block text-sm font-semibold text-gray-900 mb-1">Comments (optional)</span>
+                <textarea
+                  value={comments}
+                  onChange={e => setComments(e.target.value)}
+                  rows={4}
+                  maxLength={2000}
+                  placeholder="Anything you’d like us to know"
+                  className={inputCls}
+                />
+              </label>
             )}
 
             {choice === 'remove' && confirmRemove && (

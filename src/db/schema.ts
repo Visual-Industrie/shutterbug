@@ -213,6 +213,7 @@ export const judgeAvailabilityResponses = pgTable('judge_availability_responses'
   judgeId: uuid('judge_id').notNull().references(() => judges.id),
   seasonId: uuid('season_id').notNull().references(() => seasons.id),
   response: judgeAvailabilityResponseEnum('response').notNull(),
+  comments: text('comments'),
   respondedAt: timestamp('responded_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

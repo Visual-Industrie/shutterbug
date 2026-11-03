@@ -500,7 +500,10 @@ export default function JudgeAvailabilityAdmin() {
                               ? <span className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600">Archived</span>
                               : <span className={`text-xs px-2 py-0.5 rounded ${j.isAvailable ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{j.isAvailable ? 'Available' : 'Unavailable'}</span>}
                           </td>
-                          <td className="px-4 py-2.5"><ResponseBadge r={j.response} /></td>
+                          <td className="px-4 py-2.5 max-w-xs">
+                            <ResponseBadge r={j.response} />
+                            {j.comments && <div className="mt-1 text-xs text-gray-600 whitespace-pre-line">{j.comments}</div>}
+                          </td>
                           <td className="px-4 py-2.5 max-w-xs">
                             <div className="text-xs text-gray-600 line-clamp-2" title={prefs}>{prefs || '—'}</div>
                           </td>

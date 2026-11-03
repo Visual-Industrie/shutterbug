@@ -372,7 +372,7 @@ export default function Judges() {
                 <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5">
                   <div className="text-sm text-red-700">
                     Archived {fmt(viewing.archived_at)}
-                    {viewing.archived_reason && <div className="text-xs text-red-500 mt-0.5">{viewing.archived_reason}</div>}
+                    {viewing.archived_reason && <div className="text-xs text-red-500 mt-0.5 whitespace-pre-line">{viewing.archived_reason}</div>}
                   </div>
                   <button
                     onClick={() => archiveMutation.mutate({ id: viewing.id, archive: false })}

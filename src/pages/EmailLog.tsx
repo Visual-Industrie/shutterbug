@@ -107,6 +107,7 @@ const TEMPLATE_PLACEHOLDERS: Record<string, Array<{ key: string; description: st
     { key: '[season_year]', description: 'Season, e.g. "2027"' },
     { key: '[deadline_date]', description: 'Response deadline' },
     { key: '[judges_link]', description: 'Button: "Open Judges"' },
+    { key: '[judge_comments]', description: 'The judge\'s comments, if they left any (blank otherwise)' },
   ],
 }
 

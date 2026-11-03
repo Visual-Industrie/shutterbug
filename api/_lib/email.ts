@@ -703,9 +703,7 @@ export async function submissionInviteEmail(opts: {
   description?: string | null
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
-  const closes = opts.closesAt
-    ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
-    : 'TBA'
+  const closes = fmtNzDate(opts.closesAt)
 
   const descriptionHtml = opts.description && opts.description.replace(/<[^>]+>/g, '').trim()
     ? `<div style="margin:12px 0;padding:12px 16px;background:#fef3c7;border-left:3px solid #b45309;border-radius:4px">${opts.description}</div>`
@@ -748,9 +746,7 @@ export async function submissionReminderEmail(opts: {
   entryCount: number
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
-  const closes = opts.closesAt
-    ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
-    : 'soon'
+  const closes = opts.closesAt ? fmtNzDate(opts.closesAt) : 'soon'
   const entrySummary = opts.entryCount > 0
     ? `<p>You've already submitted ${opts.entryCount} entr${opts.entryCount === 1 ? 'y' : 'ies'}. You can still add more or make changes.</p>`
     : `<p>You haven't submitted any entries yet.</p>`
@@ -909,9 +905,7 @@ export async function deadlineReminderEmail(opts: {
   entries: Array<{ title: string; type: string }>
 }): Promise<{ subject: string; html: string }> {
   const link = `${appUrl}/submit/${opts.token}`
-  const closes = opts.closesAt
-    ? new Date(opts.closesAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
-    : 'soon'
+  const closes = opts.closesAt ? fmtNzDate(opts.closesAt) : 'soon'
 
   let templateKey: string
   let defaultSubject: string
@@ -1055,7 +1049,7 @@ function fmtDate(d: string | null): string {
   if (!d) return 'TBA'
   const parsed = new Date(d)
   if (isNaN(parsed.getTime())) return d
-  return parsed.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })
+  return parsed.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Pacific/Auckland' })
 }
 
 export async function applicationReceivedEmail(opts: {

@@ -85,6 +85,7 @@ export async function sendSubmissionInvites(competitionId: string): Promise<Bulk
     const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
     const { subject, html } = await submissionInviteEmail({
       memberName: `${m.first_name} ${m.last_name}`,
+      competitionId,
       competitionName: comp.name,
       closesAt: comp.closes_at,
       token: tok.token,
@@ -119,6 +120,7 @@ export async function sendSubmissionReminders(competitionId: string): Promise<Bu
 
     const { subject, html } = await submissionReminderEmail({
       memberName: `${m.first_name} ${m.last_name}`,
+      competitionId,
       competitionName: comp.name,
       closesAt: comp.closes_at,
       token: tok.token,
@@ -148,6 +150,7 @@ async function buildDeadlineReminder(
 
   const { subject, html } = await deadlineReminderEmail({
     memberName: `${m.first_name} ${m.last_name}`,
+    competitionId: comp.id,
     competitionName: comp.name,
     closesAt: comp.closes_at,
     token: tok.token,
@@ -234,7 +237,9 @@ export async function sendJudgingInvite(competitionId: string): Promise<{ judgeN
 
   const tok = await upsertJudgingToken(row.judge_id, competitionId, row.judging_closes_at)
   const { subject, html } = await judgingInviteEmail({
+    judgeId: row.judge_id,
     judgeName: row.judge_name,
+    competitionId,
     competitionName: row.name,
     judgingClosesAt: row.judging_closes_at,
     projimCount,
@@ -279,6 +284,7 @@ export async function sendSubmissionInviteSingle(
   const tok = await upsertSubmissionToken(m.id, competitionId, comp.closes_at)
   const { subject, html } = await submissionInviteEmail({
     memberName: `${m.first_name} ${m.last_name}`,
+    competitionId,
     competitionName: comp.name,
     closesAt: comp.closes_at,
     token: tok.token,
@@ -364,6 +370,7 @@ export async function sendResults(competitionId: string): Promise<BulkSendResult
     const historyTok = await upsertHistoryToken(m.id)
     const { subject, html } = await resultsNotificationEmail({
       memberName: `${m.first_name} ${m.last_name}`,
+      competitionId,
       competitionName: comp.name,
       entries: entriesRes.rows.map((e: { type: string; title: string; award: string | null; points_awarded: number | null; judge_comment: string | null; judge_name: string | null }) => ({
         title: e.title, type: e.type, award: e.award, points: e.points_awarded, comment: e.judge_comment,

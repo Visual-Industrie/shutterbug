@@ -225,7 +225,6 @@ function parseContact(val: unknown): { contact: JudgeContact } | { error: string
   }
   if (!contact.name) return { error: 'Please enter your name.' }
   if (!EMAIL_RE.test(contact.email)) return { error: 'Please enter a valid email address.' }
-  if (!contact.attendance) return { error: 'Please choose whether you’d judge in person or online.' }
   return { contact }
 }
 
@@ -284,6 +283,9 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
     const parsed = parseContact(b.contact)
     if ('error' in parsed) return { ok: false, status: 400, error: parsed.error }
     contact = parsed.contact
+    // Attendance only matters if they're judging this season; otherwise keep what's on file.
+    if (response === 'keen' && !contact.attendance) return { ok: false, status: 400, error: 'Please choose whether you’d judge in person or online.' }
+    if (response !== 'keen') contact.attendance = null
   }
 
   const pool = getPool()
@@ -352,7 +354,7 @@ export async function saveAvailabilityResponse(tokenValue: string, body: unknown
     if (contact) {
       await client.query(
         `UPDATE judges SET name = $2, email = $3, address = $4, website = $5, facebook = $6, instagram = $7, bio = $8,
-             attendance_preference = $9
+             attendance_preference = COALESCE($9, attendance_preference)
          WHERE id = $1`,
         [token.judge_id, contact.name, contact.email, contact.address || null, contact.website || null,
          contact.facebook || null, contact.instagram || null, contact.bio || null, contact.attendance],

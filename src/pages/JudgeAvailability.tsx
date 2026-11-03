@@ -75,36 +75,41 @@ function ContactSection({ contact, onChange }: { contact: JudgeContact; onChange
             className={inputCls}
           />
         </label>
-        <fieldset className="sm:col-span-2">
-          <legend className="block text-xs font-medium text-gray-700 mb-1">
-            How would you prefer to judge?<span className="text-red-500"> *</span>
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {ATTENDANCE_OPTIONS.map(o => (
-              <label
-                key={o.value}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 cursor-pointer text-sm font-medium transition-colors ${
-                  contact.attendance === o.value ? 'border-amber-500 bg-amber-50 text-gray-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="attendance"
-                  value={o.value}
-                  checked={contact.attendance === o.value}
-                  onChange={() => set('attendance', o.value)}
-                  className="w-4 h-4 accent-amber-600"
-                />
-                {o.label}
-              </label>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            We usually choose judges who can visit the club in person, but we can be flexible.
-          </p>
-        </fieldset>
       </div>
     </section>
+  )
+}
+
+function AttendanceField({ value, onChange }: { value: JudgeAttendance | null; onChange: (v: JudgeAttendance) => void }) {
+  return (
+    <fieldset>
+      <legend className="block text-sm font-semibold text-gray-900 mb-2">
+        How would you prefer to judge?<span className="text-red-500"> *</span>
+      </legend>
+      <div className="flex flex-wrap gap-2">
+        {ATTENDANCE_OPTIONS.map(o => (
+          <label
+            key={o.value}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 cursor-pointer text-sm font-medium transition-colors ${
+              value === o.value ? 'border-amber-500 bg-amber-50 text-gray-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <input
+              type="radio"
+              name="attendance"
+              value={o.value}
+              checked={value === o.value}
+              onChange={() => onChange(o.value)}
+              className="w-4 h-4 accent-amber-600"
+            />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-gray-500 mt-2">
+        We usually choose judges who can visit the club in person, but we can be flexible.
+      </p>
+    </fieldset>
   )
 }
 
@@ -391,8 +396,9 @@ export default function JudgeAvailability() {
   const available = data.competitions.filter(c => !c.filled)
   const filledPicks = data.competitions.filter(c => c.filled)
   const option = OPTIONS.find(o => o.value === choice)
-  const contactValid = !contact || (!!contact.name.trim() && !!contact.attendance && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()))
-  const canSubmit = !!choice && !saving && contactValid && (choice !== 'keen' || selected.length > 0)
+  const contactValid = !contact || (!!contact.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()))
+  const attendanceMissing = choice === 'keen' && !!contact && !contact.attendance
+  const canSubmit = !!choice && !saving && contactValid && !attendanceMissing && (choice !== 'keen' || selected.length > 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -480,6 +486,10 @@ export default function JudgeAvailability() {
 
             {choice === 'keen' && (
               <>
+                {contact && (
+                  <AttendanceField value={contact.attendance} onChange={v => setContact({ ...contact, attendance: v })} />
+                )}
+
                 <section>
                   <h2 className="text-sm font-semibold text-gray-900 mb-1">Competitions needing a judge</h2>
                   <p className="text-xs text-gray-500 mb-3">Tick any you’d be interested in judging. As many as you like.</p>
@@ -595,7 +605,8 @@ export default function JudgeAvailability() {
             <div className="flex-1 text-xs text-gray-500">
               {!contactValid && 'Please check your details above'}
               {contactValid && !choice && 'Choose one of the options above'}
-              {contactValid && choice === 'keen' && (selected.length === 0 ? 'Select at least one competition' : `${selected.length} selected`)}
+              {contactValid && attendanceMissing && 'Choose in person or online'}
+              {contactValid && !attendanceMissing && choice === 'keen' && (selected.length === 0 ? 'Select at least one competition' : `${selected.length} selected`)}
             </div>
             {data.current.response && (
               <button
